@@ -1,6 +1,6 @@
 [project]
 name = "photo-archive-manager"
-version = "1.0.0rc2"
+version = "1.0.0"
 description = "Photo Archive Manager - privacy-first local photo renaming"
 requires-python = ">=3.12"
 

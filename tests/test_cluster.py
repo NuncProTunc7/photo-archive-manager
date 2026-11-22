@@ -593,6 +593,15 @@ def test_the_published_estimate_is_not_off_by_ORDERS_OF_MAGNITUDE_against_a_real
     hardware is ~3x slower, which pushes it to about 0.12. The band is 1/100 to 100, which
     a tighter reading would not survive on a shared runner and which A2's own defect -
     three orders of magnitude - fails by a wide margin.
+
+    THE CLOCK IS `perf_counter`, NOT `monotonic` (HT-M15 F2, 2026-11-22). On Windows before
+    Python 3.13, `time.monotonic()` is GetTickCount64, which advances in ~15.6 ms steps; the
+    hosted runner's Python 3.12 finished this `dbscan` inside one step and read 0, failing
+    `elapsed > 0` on two public CI runs. A WARM `dbscan` (an earlier test in this module has
+    already run one) takes ~7 ms on the machine the ratio above was measured on - the 0.061 s
+    is a cold first call - so it fits inside one step anywhere. `perf_counter` is
+    QueryPerformanceCounter on every version. Flooring it to 15.6 ms steps fails this test
+    (M5410), which is the bug reproduced.
     """
     import time
 
@@ -601,9 +610,9 @@ def test_the_published_estimate_is_not_off_by_ORDERS_OF_MAGNITUDE_against_a_real
         index + 1: tuple(rng.gauss(0, 1) for _ in range(cluster.DEFAULT_DIM))
         for index in range(1_200)
     }
-    started = time.monotonic()
+    started = time.perf_counter()
     cluster.dbscan(faces, epsilon=0.3, min_samples=2)
-    elapsed = time.monotonic() - started
+    elapsed = time.perf_counter() - started
     predicted = cluster.estimate(len(faces)).seconds
     assert elapsed > 0, "the clock did not move; this machine cannot measure this test"
     assert 0.01 <= predicted / elapsed <= 100, (predicted, elapsed)
