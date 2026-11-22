@@ -1,0 +1,225 @@
+name: release
+
+# THE RELEASE PIPELINE (M15 Task 14; OD-10). On a tag `vX.Y.Z` or `vX.Y.ZrcN` it:
+#   1. recomputes this checkout against the committed EXPORT-MANIFEST.txt (gate 2: the tree is the
+#      one the maintainer approved before it was pushed, file for file);
+#   2. runs the public suite, unnarrowed, plus ruff and mypy;
+#   3. runs the installer's behavioural tests (TEST builds, each with its own root and AppId);
+#   4. builds the installer from the lock - the CPython embeddable zip and every wheel checked
+#      against their pinned SHA-256s, exiftool checked against its pin - and compiles it;
+#   5. writes pam-release.json (the update manifest `pam update` reads);
+#   6. creates a DRAFT release, never a published one, with the installer's SHA-256 in the job
+#      summary and in the release notes. Its assets are the installer, pam-release.json, pam's
+#      wheel (the pip route `pam update` prints) and the exact source archives of the GPL/LGPL
+#      code the installer contains (the maintainer's two decisions of 2026-11-21). A draft is visible only to the repository's maintainers;
+#      the maintainer tests that exact installer and publishes the draft without rebuilding
+#      (gate 3).
+#
+# Nothing here runs on a branch push or a pull request: `.github/workflows/ci.yml` does that.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+# THE PINS, IN ONE PLACE. `tools/release_pins.py check` refuses to build while any SHA-256 is not
+# 64 lowercase hex digits or still holds a placeholder, so a release cannot ship an input nobody
+# checked. EXIFTOOL_SHA256 is the "SHA2-256(exiftool-13.64_64.zip)" line of exiftool.org's own
+# checksums.txt (11,217,963 bytes); the zip holds one top folder `exiftool-13.64_64/` with
+# `exiftool(-k).exe` and `exiftool_files/`, and the exe must be renamed `exiftool.exe`.
+# The CPython embeddable zip is pinned in `tools/installer/build.py` (EMBEDDABLE_SHA256) and
+# every wheel in `tools/installer/requirements-314.lock`, by hash.
+env:
+  EXIFTOOL_VERSION: "13.64"
+  EXIFTOOL_URL: "https://sourceforge.net/projects/exiftool/files/exiftool-13.64_64.zip/download"
+  EXIFTOOL_SHA256: "72c29c44d1e860eebcaefa71692d979af9858fe9a6d7d791a5e7f1dac77804af"
+  INNO_VERSION: "6.7.4"
+  INNO_URL: "https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe"
+  INNO_SHA256: "a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c"
+  EMBED_VERSION: "3.14.10"
+  # The GPL/LGPL source archives (maintainer's decision 2, 2026-11-21), each GitHub's archive of the
+  # upstream tag THIRD-PARTY-NOTICES.txt names, measured once with the maintainer's approval on
+  # 2026-11-21 (sizes 2,311,710 / 325,596 / 2,055,120 / 26,866,828 bytes). Each is uploaded
+  # unchanged as a release asset.
+  LIBHEIF_SRC_URL: "https://github.com/strukturag/libheif/archive/refs/tags/v1.23.6.tar.gz"
+  LIBHEIF_SRC_SHA256: "c9a00b0452f5c16d72ef71e5e40c0e90fbe2ad37148d27a1b2f9bb21546f5f03"
+  LIBDE265_SRC_URL: "https://github.com/strukturag/libde265/archive/refs/tags/v1.1.3.tar.gz"
+  LIBDE265_SRC_SHA256: "189baa08fd6d2dd34db099de411bd6b2e6bd5eb88e81236a3d0fa3826b9715c4"
+  X265_SRC_URL: "https://github.com/Multicorewareinc/x265/archive/refs/tags/4.3.tar.gz"
+  X265_SRC_SHA256: "fb157f809b74dabbef5002af99489fcaebb4d0073724beffdaaf2be15cbaf7ac"
+  PILLOW_HEIF_SRC_URL: "https://github.com/bigcat88/pillow_heif/archive/refs/tags/v1.8.1.tar.gz"
+  PILLOW_HEIF_SRC_SHA256: "eb3108e2f62a55cd38322e22da6ba09cba0e3c6f6c6df9958eb846f84fc1a95e"
+
+jobs:
+  manifest:
+    name: the checkout is the approved export (gate 2)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: recompute every file against EXPORT-MANIFEST.txt
+        run: python tools/export_public.py --verify . EXPORT-MANIFEST.txt
+
+  suite:
+    name: the public suite
+    needs: manifest
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: Install exiftool
+        run: choco install exiftool -y --no-progress
+      - name: pam doctor
+        run: pam doctor
+      - name: node is required (test_static_syntax.py's guard must not silently skip)
+        run: node --version
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy pam
+      - name: pytest (the FULL suite - nothing excluded)
+        run: pytest -q
+
+  installer:
+    name: the installer's behavioural tests
+    needs: manifest
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: Install Inno Setup (pinned by SHA-256)
+        run: |
+          Invoke-WebRequest -Uri $env:INNO_URL -OutFile innosetup.exe
+          $got = (Get-FileHash innosetup.exe -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:INNO_SHA256) { throw "innosetup.exe hashed $got, expected $env:INNO_SHA256" }
+          Start-Process -Wait -FilePath .\innosetup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$env:RUNNER_TEMP\inno"
+      - name: tools/installer/ci_installer_job.ps1 (PAM_INNO_REQUIRED=1, nothing may skip)
+        run: powershell -NoProfile -File tools/installer/ci_installer_job.ps1 -Iscc "$env:RUNNER_TEMP\inno\ISCC.exe"
+
+  build:
+    name: build, compile and draft the release
+    needs: [suite, installer]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: refuse an unpinned input, and a tag that is not this version
+        id: pins
+        run: |
+          $channel = python tools/release_pins.py check --tag $env:GITHUB_REF_NAME
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          "channel=$channel" >> $env:GITHUB_OUTPUT
+          "version=$($env:GITHUB_REF_NAME.Substring(1))" >> $env:GITHUB_OUTPUT
+
+      - name: the CPython embeddable package (build.py checks EMBEDDABLE_SHA256)
+        run: Invoke-WebRequest -Uri "https://www.python.org/ftp/python/$env:EMBED_VERSION/python-$env:EMBED_VERSION-embed-amd64.zip" -OutFile "python-$env:EMBED_VERSION-embed-amd64.zip"
+
+      - name: the locked wheels, by hash
+        run: |
+          $rg = python tools/release_pins.py split-lock tools/installer/requirements-314.lock wheels.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python -m pip download --require-hashes --no-deps --only-binary=:all: --platform win_amd64 --python-version 3.14 --implementation cp --abi cp314 -d wheels -r wheels.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # reverse-geocoder publishes an sdist only; the lock's header gives the reproducible build,
+          # and its line carries the built wheel's hash too, which build.py's install checks.
+          python -m pip install "setuptools==84.2.1"
+          $env:SOURCE_DATE_EPOCH = "1700000000"
+          $rg | Out-File -Encoding ascii rg.txt
+          python -m pip wheel --no-deps --no-build-isolation --require-hashes -r rg.txt -w wheels
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: exiftool's official Windows package, by hash
+        run: |
+          Invoke-WebRequest -Uri $env:EXIFTOOL_URL -OutFile exiftool.zip -UserAgent "Wget"
+          $got = (Get-FileHash exiftool.zip -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:EXIFTOOL_SHA256) { throw "exiftool.zip hashed $got, expected $env:EXIFTOOL_SHA256" }
+          Expand-Archive exiftool.zip -DestinationPath exiftool-zip
+          $folder = "exiftool-zip\exiftool-$($env:EXIFTOOL_VERSION)_64"
+          if (-not (Test-Path "$folder\exiftool(-k).exe") -or -not (Test-Path "$folder\exiftool_files")) { throw "exiftool.zip does not hold $folder with exiftool(-k).exe and exiftool_files" }
+          New-Item -ItemType Directory -Force -Path exiftool | Out-Null
+          Copy-Item -Recurse "$folder\exiftool_files" exiftool\exiftool_files
+          Copy-Item "$folder\exiftool(-k).exe" exiftool\exiftool.exe
+          & exiftool\exiftool.exe -ver
+          if ($LASTEXITCODE -ne 0) { throw "the extracted exiftool.exe does not run" }
+
+      - name: the GPL/LGPL source - libheif 1.23.6, by hash (a release asset)
+        run: |
+          Invoke-WebRequest -Uri $env:LIBHEIF_SRC_URL -OutFile libheif-1.23.6.tar.gz
+          $got = (Get-FileHash libheif-1.23.6.tar.gz -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:LIBHEIF_SRC_SHA256) { throw "libheif-1.23.6.tar.gz hashed $got, expected $env:LIBHEIF_SRC_SHA256" }
+
+      - name: the GPL/LGPL source - libde265 1.1.3, by hash (a release asset)
+        run: |
+          Invoke-WebRequest -Uri $env:LIBDE265_SRC_URL -OutFile libde265-1.1.3.tar.gz
+          $got = (Get-FileHash libde265-1.1.3.tar.gz -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:LIBDE265_SRC_SHA256) { throw "libde265-1.1.3.tar.gz hashed $got, expected $env:LIBDE265_SRC_SHA256" }
+
+      - name: the GPL/LGPL source - x265 4.3, by hash (a release asset)
+        run: |
+          Invoke-WebRequest -Uri $env:X265_SRC_URL -OutFile x265-4.3.tar.gz
+          $got = (Get-FileHash x265-4.3.tar.gz -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:X265_SRC_SHA256) { throw "x265-4.3.tar.gz hashed $got, expected $env:X265_SRC_SHA256" }
+
+      - name: the GPL/LGPL source - pillow-heif 1.8.1, by hash (a release asset)
+        run: |
+          Invoke-WebRequest -Uri $env:PILLOW_HEIF_SRC_URL -OutFile pillow_heif-1.8.1.tar.gz
+          $got = (Get-FileHash pillow_heif-1.8.1.tar.gz -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:PILLOW_HEIF_SRC_SHA256) { throw "pillow_heif-1.8.1.tar.gz hashed $got, expected $env:PILLOW_HEIF_SRC_SHA256" }
+
+      - name: Install Inno Setup (pinned by SHA-256)
+        run: |
+          Invoke-WebRequest -Uri $env:INNO_URL -OutFile innosetup.exe
+          $got = (Get-FileHash innosetup.exe -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:INNO_SHA256) { throw "innosetup.exe hashed $got, expected $env:INNO_SHA256" }
+          Start-Process -Wait -FilePath .\innosetup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$env:RUNNER_TEMP\inno"
+
+      - name: build and compile the installer
+        run: |
+          python -m pip wheel --no-deps -w pam-wheel .
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # The exact name `pam update` prints for the pip route (pam/update/release.py wheel_name).
+          $wheel = "pam-wheel\photo_archive_manager-${{ steps.pins.outputs.version }}-py3-none-any.whl"
+          if (-not (Test-Path $wheel)) { throw "pip wheel did not write $wheel, the wheel name pam update prints" }
+          python tools/installer/build.py --embed-zip "python-$env:EMBED_VERSION-embed-amd64.zip" --wheels wheels --exiftool-dir exiftool --out dist --pam-wheel $wheel --iscc "$env:RUNNER_TEMP\inno\ISCC.exe" --keep-stage stage
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: write pam-release.json
+        run: |
+          python tools/release_manifest.py "dist\pam-setup-${{ steps.pins.outputs.version }}.exe" --payload stage\payload\python\Lib\site-packages --channel ${{ steps.pins.outputs.channel }}
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: create the DRAFT release, with the installer's SHA-256 in the summary and the notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.pins.outputs.version }}"
+          $installer = "dist\pam-setup-$version.exe"
+          $sha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          "## pam $version" >> $env:GITHUB_STEP_SUMMARY
+          "Installer SHA-256: ``$sha``" >> $env:GITHUB_STEP_SUMMARY
+          $notes = "pam $version for Windows.`n`nInstaller SHA-256: $sha`n`nCheck it before you run the installer: in PowerShell, Get-FileHash pam-setup-$version.exe`n`nThe .whl is pam for pip. The .tar.gz files are the source of the GPL and LGPL code the installer contains (THIRD-PARTY-NOTICES.txt)."
+          $wheel = "pam-wheel\photo_archive_manager-$version-py3-none-any.whl"
+          $sources = @("libheif-1.23.6.tar.gz", "libde265-1.1.3.tar.gz", "x265-4.3.tar.gz", "pillow_heif-1.8.1.tar.gz")
+          $flags = @("--draft")
+          if ("${{ steps.pins.outputs.channel }}" -eq "rc") { $flags += "--prerelease" }
+          gh release create $env:GITHUB_REF_NAME @flags --title "pam $version" --notes $notes $installer dist\pam-release.json $wheel @sources
+          if ($LASTEXITCODE -ne 0) { exit 1 }

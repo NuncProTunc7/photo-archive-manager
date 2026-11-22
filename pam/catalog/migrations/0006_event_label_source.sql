@@ -1,0 +1,27 @@
+-- 0006_event_label_source.sql
+-- Spec 6.1 rev 15's obligation, discharged: `{event}`'s tier is "the tier of the fact
+-- that produced the LABEL - high for a user-set label, the geocoder's tier otherwise",
+-- and `events` had no column saying which. Through M8 exactly one writer of a non-NULL
+-- label existed and it was a person, so `naming/tokens.py` used the literal `high`. M9's
+-- geocoder is the second writer, and rev 15 says in as many words that the literal is a
+-- defect the moment it lands. This column is the provenance it reads.
+--
+-- 'geocode' or 'user'; NULL where there is no label. THE TIER IS DERIVED FROM THE SOURCE
+-- AND IS NOT STORED (M9 plan clarification 2). A cached `label_tier` would go stale the
+-- moment spec 6.4's table changed, and spec 6.1's own pattern for every other token is to
+-- record `(source_table, source_id)` and derive the tier from it, never to cache it.
+--
+-- The vocabulary is not a CHECK constraint because no migration in this catalog uses one,
+-- and because this project's idiom for a vocabulary the whole product must agree about is
+-- a declared tuple in one module (`plan_items.ITEM_STATUSES`, `journal.OPS`,
+-- `repo.ENRICHERS`). `repo.events.LABEL_SOURCES` is that tuple.
+--
+-- The backfill is not cosmetic. Before this migration the only way an `events.label` could
+-- be non-NULL was for a person to set it - `_insert_event` has written NULL since M8 Task 7
+-- and geocoding did not exist - so 'user' is the true provenance of every pre-0006 label,
+-- and leaving it NULL would rate a user's own label by the unknown-source rule instead of
+-- the `high` spec 6.1 gives it. After this statement `label_source IS NULL` and
+-- `label IS NULL` mean the same thing on every row, which is the invariant
+-- `naming/tokens.py` reads.
+ALTER TABLE events ADD COLUMN label_source TEXT;
+UPDATE events SET label_source = 'user' WHERE label IS NOT NULL;

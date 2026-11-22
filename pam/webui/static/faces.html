@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pam faces</title>
+    <!--
+      A SECOND PAGE, NOT A MODE OF THE REVIEW PAGE (M11 Task 10 Step 1). It shares
+      `style.css` - UX spec 7's visual system is one system for M7 and M11 alike - and
+      shares nothing else. Naming people is a different workflow with a different
+      vocabulary from approving filenames: there is no plan, no tier, no trust score and
+      no rename here, and `app.js` is 2,275 lines of exactly those things.
+
+      RELATIVE hrefs, always. Every route lives under the per-session token prefix and
+      the browser supplies that prefix from the address bar, so the token is never
+      written into a static file - design spec 8.2 puts it in exactly two places, the
+      printed URL and the address bar, and a shipped asset is neither.
+
+      NO EXTERNAL URL APPEARS ANYWHERE IN THIS PAGE (spec 8.2 rev 12): no CDN, no font,
+      no scheme of any kind. A page that fetches a font announces the user's archive to
+      a third party, and pam's network canary watches pam's own sockets, not the
+      browser's.
+    -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      UX spec 7: phone is unsupported and an unsupported viewport gets friendly copy,
+      never a layout that half works. The ids are `style.css`'s, so this page inherits
+      the same 1100px boundary the review page has rather than declaring a second one.
+    -->
+    <div id="narrow-notice">
+      <h1>Naming people needs a wider window</h1>
+      <p>
+        Naming a group means looking at several faces side by side, so this page is
+        built for a desktop or a tablet in landscape. Open this on a larger screen and
+        it will pick up where you left off — the names you have given are already saved.
+      </p>
+      <p>Nothing is renamed from this page, on any screen.</p>
+    </div>
+
+    <div id="page">
+      <header id="header">
+        <div class="header-row">
+          <!-- UX spec 6's own question, verbatim. -->
+          <h1 id="faces-title">Who is this?</h1>
+          <span id="group-position"></span>
+          <!--
+            THE WAY BACK FROM IGNORE (Task 11 Step 3, I3). Ignore is remembered, and a
+            remembered choice nobody can find again is a one-way door. This is where the
+            faces it set aside are listed, each with a Restore.
+          -->
+          <button id="show-ignored" type="button">Ignored faces</button>
+          <!--
+            WHERE A NAME IS REPAIRED (Task 11 Step 2, vision R6). Naming a group is the
+            action a user is most likely to regret; this is where it is undone piece by
+            piece - rename, filename name, hide, take faces off, move them, merge.
+          -->
+          <button id="show-people" type="button">Manage people</button>
+        </div>
+
+        <!--
+          UX spec 5's fourth state, in this page's own words. The em dash is deliberate:
+          this is browser copy served as UTF-8, not console copy.
+        -->
+        <div id="error-banner" class="banner" hidden>
+          <span id="error-text">pam faces label has stopped — restart it from the terminal</span>
+        </div>
+      </header>
+
+      <div id="main">
+        <section id="group-region">
+          <!--
+            UX spec 6: "One cluster at a time, biggest clusters first (highest naming
+            payoff first)." The faces are CROPS, served by `/faces/crop/{face_id}` and
+            cut from the same decoded raster the detector saw (I4) - never the embedded
+            preview, which is zero bytes on the HEIC files that are most of this corpus.
+          -->
+          <div id="face-strip"></div>
+          <p id="photo-count"></p>
+
+          <!--
+            SPEC 8.2's `/faces/cluster/{id}` IS "every face in one cluster, so a user can
+            expand before assigning one name to all of them" - so the page offers the
+            expanding. The strip otherwise shows the server's spread sample, which is five
+            faces chosen for detection quality and spread rather than row order.
+          -->
+          <button id="expand-cluster" type="button">Show every face in this group</button>
+
+          <form id="name-form">
+            <label for="name-input">Name</label>
+            <!--
+              AUTOCOMPLETE, NEVER A SUGGESTION (vision R6, Step 7). The list offers the
+              people already named so that `Emma` and `emma` do not become two people;
+              the field itself starts EMPTY for every group and pam never pre-fills it.
+              A name pam proposed is a name a tired user accepts.
+            -->
+            <input
+              id="name-input"
+              type="text"
+              list="person-list"
+              autocomplete="off"
+              placeholder="Type a name"
+            />
+            <datalist id="person-list"></datalist>
+
+            <div class="face-actions">
+              <button id="save-name" type="submit" class="primary">Save name</button>
+              <!--
+                UX spec 6's second control: "flags the cluster for re-clustering (split),
+                never guesses". The click asks for a PROPOSAL and nothing else; the split
+                panel below shows it, and only its own confirm control writes.
+              -->
+              <button id="not-same-person" type="button">Not the same person</button>
+              <button id="skip-group" type="button">Skip</button>
+              <!--
+                UX spec 6's Ignore, remembered by pam (`cluster/{id}/dismiss`). Reversible
+                from `Ignored faces` in the header, which is why it may exist at all.
+              -->
+              <button id="ignore-group" type="button">Ignore</button>
+            </div>
+          </form>
+
+          <!--
+            THE PROPOSED SPLIT (Task 11 Step 4). Nothing is written until `confirm-split`
+            is pressed; `cancel-split` issues no request at all. When pam cannot tell the
+            faces apart the sentence says so and the confirm control is not shown.
+          -->
+          <div id="split-panel" hidden>
+            <p id="split-message"></p>
+            <div id="split-groups"></div>
+            <div class="face-actions">
+              <button id="confirm-split" type="button" class="primary">Split them</button>
+              <button id="cancel-split" type="button">Keep them together</button>
+            </div>
+          </div>
+
+          <!--
+            SKIP AND IGNORE ARE DIFFERENT THINGS AND THE PAGE HAS TO SAY SO (Step 6).
+            Skip is session state in this browser tab and is deliberately not written
+            down; Ignore is the one that is remembered.
+          -->
+          <p id="skip-note">
+            Skip sets a group aside for this visit only — reload the page, or use the
+            control below, and it comes back. Ignore is the one pam will remember: it
+            stops offering the group, and you can bring any of its faces back from
+            Ignored faces.
+          </p>
+        </section>
+
+        <!--
+          THE IGNORED FACES VIEW (Task 11 Step 3). Both kinds pam sets aside, each with
+          the server's count, a crop per face and a Restore per face.
+        -->
+        <section id="ignored-region" hidden>
+          <h2>Ignored faces</h2>
+          <p id="ignored-empty" hidden>
+            Nothing is ignored. Faces you ignore while naming appear here, and each one
+            can be brought back.
+          </p>
+          <h3>Ignored <span id="ignored-count"></span></h3>
+          <div id="ignored-list"></div>
+          <h3>Not a face <span id="not-face-count"></span></h3>
+          <div id="not-face-list"></div>
+          <button id="close-ignored" type="button">Back to naming</button>
+        </section>
+
+        <!--
+          THE MANAGE PEOPLE VIEW (Task 11 Step 2). Every named person with the server's
+          counts; open one to see their faces and correct them. Every field here STARTS
+          EMPTY (vision R6): pam never types a name into a box for the user.
+        -->
+        <section id="people-region" hidden>
+          <h2>Manage people</h2>
+          <p id="people-empty" hidden>
+            pam knows no named people yet. Names you save while naming groups appear here.
+          </p>
+          <div id="people-list"></div>
+
+          <div id="person-panel" hidden>
+            <h3 id="person-title"></h3>
+            <p id="person-summary"></p>
+            <p id="filename-current"></p>
+
+            <form id="rename-form">
+              <label for="rename-input">New name</label>
+              <input id="rename-input" type="text" autocomplete="off" placeholder="Type a name" />
+              <button id="rename-person" type="submit">Rename</button>
+            </form>
+
+            <form id="filename-form">
+              <label for="filename-input">Name used in filenames</label>
+              <input
+                id="filename-input"
+                type="text"
+                autocomplete="off"
+                placeholder="Type the name for filenames"
+              />
+              <button id="set-filename" type="submit">Use in filenames</button>
+              <button id="clear-filename" type="button">Stop using it</button>
+            </form>
+
+            <button id="toggle-hidden" type="button">Hide</button>
+
+            <!-- Select one or more faces, then take the name off, move or reject them. -->
+            <div id="person-faces"></div>
+            <p id="selected-count"></p>
+            <form id="move-form" class="face-actions">
+              <button id="unassign-faces" type="button">Take the name off</button>
+              <label for="move-input">Move to</label>
+              <input
+                id="move-input"
+                type="text"
+                list="person-list"
+                autocomplete="off"
+                placeholder="Type a name"
+              />
+              <button id="move-faces" type="submit">Move</button>
+              <button id="not-a-face" type="button">Not a face</button>
+            </form>
+
+            <!--
+              MERGE IS DESTRUCTIVE AND SAYS SO (Step 6). Choosing a person only shows the
+              confirmation, naming both people and their counts; nothing is sent until
+              `confirm-merge`, and `cancel-merge` sends nothing at all.
+            -->
+            <div class="face-actions">
+              <label for="merge-into">Merge into</label>
+              <select id="merge-into"></select>
+              <button id="propose-merge" type="button">Merge</button>
+            </div>
+            <div id="merge-panel" hidden>
+              <p id="merge-message"></p>
+              <div class="face-actions">
+                <button id="confirm-merge" type="button" class="primary">Merge them</button>
+                <button id="cancel-merge" type="button">Keep them separate</button>
+              </div>
+            </div>
+          </div>
+
+          <button id="close-people" type="button">Back to naming</button>
+        </section>
+
+        <p id="action-note" hidden></p>
+        <!--
+          ONE UNDO, FOR THE WRITE JUST MADE (Task 11 Step 5). It reverses exactly the
+          most recent name or split and disappears as soon as anything else is done.
+        -->
+        <button id="undo-last" type="button" hidden>Undo</button>
+        <p id="request-error" hidden></p>
+
+        <!-- UX spec 6's progress line: named, remaining, and the estimate. -->
+        <p id="progress-line"></p>
+
+        <!-- UX spec 6's done state, verbatim. -->
+        <div id="done-panel" class="banner" hidden>
+          All clusters handled. People will appear in filenames on your next pam plan.
+          <!-- F5 (P2): the groups A11's floor is hiding, counted, so the done state is
+               not a silence over work nobody can see. Filled from the view. -->
+          <p id="done-hidden" hidden></p>
+        </div>
+
+        <!--
+          NOT THE DONE STATE, AND THE DIFFERENCE MATTERS. `cluster_epsilon` ships unset,
+          so `pam faces cluster` refuses and a fresh archive has no groups at all.
+          Telling that user "All clusters handled" would report a job finished that
+          never started - vision principle 9, never summarize failure as success.
+        -->
+        <div id="empty-panel" class="banner" hidden>
+          pam has not grouped any faces in this folder yet, so there is nothing to
+          name. Face grouping runs from the terminal: pam faces cluster.
+        </div>
+
+        <!--
+          NOT THE DONE STATE EITHER. Every remaining group has been set aside in THIS
+          VISIT, which is not the same as every group being handled; saying the latter
+          would summarize a job left undone as a success. Skip is session state, so the
+          way back is a control on the page rather than a reload the user has to guess.
+        -->
+        <div id="skipped-panel" class="banner" hidden>
+          Every remaining group is skipped for this visit. Nothing has been lost —
+          skipping is never written down.
+          <button id="unskip" type="button">Bring skipped groups back</button>
+        </div>
+      </div>
+
+      <footer id="footer">
+        Nothing is renamed from this page. Names appear in filenames the next time you
+        run:
+        <code id="footer-command">pam plan</code>
+      </footer>
+    </div>
+
+    <script src="faces.js"></script>
+  </body>
+</html>

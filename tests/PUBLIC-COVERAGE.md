@@ -1,0 +1,276 @@
+# Public coverage: every product safety control, and the public test that holds it
+
+This file maps each of pam's product safety controls - the architectural guards, the privacy
+canary, the fault-injection matrix and the safety constructions - to the tests in this public
+repository that hold it. `tests/test_public_coverage.py` collects every node id named below and
+fails if one is not collected, and it requires each heading and a minimum count, so this file
+cannot shrink to nothing and still pass.
+
+Node ids are written `tests/MODULE::TEST`. A parametrized test counts when any of its cases is
+collected.
+
+## Guards
+
+### ALLOWED_MOVE_SITES - one filesystem move implementation; vision S1/S2
+
+- `tests/test_rename.py::test_exactly_one_filesystem_move_implementation_exists_in_the_package`
+- `tests/test_webui_rename.py::test_the_verified_rename_is_called_only_in_execute_unit`
+- `tests/test_webui_server.py::test_no_module_under_webui_can_reach_a_rename_primitive`
+- `tests/test_webui_server.py::test_u19_leaves_the_move_sites_exactly_as_they_were`
+
+### ALLOWED_NETWORK_IMPORTS / BANNED_NETWORK_MODULES - only pam/net.py reaches a socket; vision S4
+
+- `tests/test_net.py::test_only_net_py_can_reach_the_network_at_all`
+- `tests/test_net.py::test_the_network_allowlist_is_the_one_the_spec_names`
+- `tests/test_net.py::test_the_banned_list_is_exactly_what_the_spec_names`
+- `tests/test_net.py::test_the_capability_list_is_exactly_what_the_spec_names_plus_the_clients`
+- `tests/test_net.py::test_the_capability_guard_catches_the_modules_nothing_imports_yet`
+
+### ALLOWED_UPDATE_IMPORTS - only `pam update` imports the release client
+
+- `tests/test_update_isolation.py::test_the_allowlist_is_the_one_e4_names`
+- `tests/test_update_isolation.py::test_only_the_update_command_imports_the_release_client`
+
+### ALLOWED_WEBUI_EXECUTE_IMPORTS - the review page reaches execute only through named pairs
+
+- `tests/test_webui_server.py::test_the_webui_execute_allowances_are_named_pairs_under_the_forbidden_package`
+- `tests/test_webui_server.py::test_every_webui_execute_allowance_is_used_except_the_two_task_6b_will_use`
+
+### REPO_OWN_TABLES / ALLOWED_REPO_REACHES - all SQL behind pam/catalog/repo/
+
+- `tests/test_repo.py::test_the_repo_module_map_covers_every_module_on_disk`
+- `tests/test_repo.py::test_the_reach_exemption_is_exactly_the_three_documented_modules`
+- `tests/test_repo.py::test_no_module_may_pre_bless_a_table_it_does_not_own`
+- `tests/test_repo.py::test_the_extractor_sees_the_sql_that_is_actually_there`
+- `tests/test_repo.py::test_the_catalog_cross_table_reaches_are_exactly_the_documented_ones`
+
+### The dependency closure - `{click, pam}` eagerly, the extras optional
+
+- `tests/test_deps.py::test_the_eager_import_closure_is_exactly_what_is_declared`
+- `tests/test_deps.py::test_the_closure_probe_would_notice_a_new_import`
+- `tests/test_deps.py::test_pyproject_declares_exactly_the_sanctioned_runtime_dependencies`
+- `tests/test_deps.py::test_an_optional_extra_never_enters_the_runtime_closure`
+
+## Privacy canary
+
+Vision S4: pam opens no socket except where the design says. The canary drives
+real commands under a socket watch.
+
+### `tests/test_net_canary.py`
+
+- `tests/test_net_canary.py::test_the_whole_pipeline_opens_no_socket_at_all`
+- `tests/test_net_canary.py::test_the_page_chain_read_rename_undo_opens_only_loopback_sockets`
+- `tests/test_net_canary.py::test_no_archive_command_opens_a_socket_or_loads_the_release_client`
+- `tests/test_net_canary.py::test_the_release_client_canary_sees_the_lazy_import_and_a_real_connection`
+- `tests/test_net_canary.py::test_the_canary_records_a_real_outbound_connection`
+- `tests/test_net_canary.py::test_the_canary_also_sees_connect_ex`
+- `tests/test_net_canary.py::test_the_canary_sees_getaddrinfo_and_forwards_its_answer`
+- `tests/test_net_canary.py::test_the_canary_sees_gethostbyname`
+- `tests/test_net_canary.py::test_the_canary_sees_gethostbyname_ex`
+- `tests/test_net_canary.py::test_the_canary_sees_sendto_and_the_datagram_arrives`
+- `tests/test_net_canary.py::test_the_canary_sees_sendmsg_where_the_platform_has_it`
+- `tests/test_net_canary.py::test_the_wrappers_forward_the_originals_exception_unchanged`
+- `tests/test_net_canary.py::test_the_send_wrappers_installed_are_exactly_what_this_platform_has`
+- `tests/test_net_canary.py::test_the_lookup_classifier_answers_a_hand_written_table`
+- `tests/test_net_canary.py::test_no_pam_module_binds_a_socket_resolver_by_name`
+- `tests/test_net_canary.py::test_every_watch_consumer_calls_an_alarm`
+- `tests/test_net_canary.py::test_the_alarm_fires_when_it_should`
+- `tests/test_net_canary.py::test_the_canary_covers_every_stage_spec_10_names`
+- `tests/test_net_canary.py::test_the_watch_is_uninstalled_when_a_test_finishes`
+- `tests/test_net_canary.py::test_reverse_geocoder_imports_and_answers_a_query_without_opening_a_socket`
+- `tests/test_net_canary.py::test_the_geocoder_dataset_ships_inside_the_package_so_the_download_branch_is_dead`
+- `tests/test_net_canary.py::test_the_faces_loader_refuses_a_missing_pack_without_opening_a_socket`
+- `tests/test_net_canary.py::test_the_faces_loader_refuses_a_corrupt_pack_without_opening_a_socket`
+- `tests/test_net_canary.py::test_loading_a_real_model_pack_opens_no_socket_at_all`
+- `tests/test_net_canary.py::test_the_enrich_stage_WITH_FACES_ON_opens_no_socket_at_all`
+- `tests/test_net_canary.py::test_the_ocr_engine_loads_and_reads_without_a_python_socket`
+- `tests/test_net_canary.py::test_no_control_in_this_file_can_be_deleted_without_saying_so`
+- `tests/test_net_canary.py::test_only_the_pipeline_test_is_gated_on_the_presence_of_exiftool`
+- `tests/test_net_canary.py::test_the_doctor_probe_refuses_an_off_box_host_without_dialling_it`
+- `tests/test_net_canary.py::test_pam_models_pull_refuses_an_off_box_host_without_dialling_it`
+- `tests/test_net_canary.py::test_a_host_answering_both_loopback_and_off_box_is_refused_before_any_connection`
+- `tests/test_net_canary.py::test_the_probe_really_does_connect_when_the_address_is_loopback`
+- `tests/test_net_canary.py::test_the_captioner_refuses_an_off_box_host_without_dialling_it`
+- `tests/test_net_canary.py::test_a_captioner_host_answering_LOOPBACK_AND_OFF_BOX_is_refused_before_any_connection`
+- `tests/test_net_canary.py::test_the_captioner_really_does_connect_when_the_address_is_loopback`
+- `tests/test_net_canary.py::test_the_enrich_stage_WITH_CAPTIONING_ON_opens_only_loopback_sockets`
+
+## Fault-injection matrix
+
+Design 9.3: a crash or storage failure at every journal point, across a real
+process boundary, leaves the archive recoverable.
+
+### `tests/test_faults_matrix.py`
+
+- `tests/test_faults_matrix.py::test_the_fault_matrix`
+- `tests/test_faults_matrix.py::test_the_dbfail_matrix`
+- `tests/test_faults_matrix.py::test_the_table_covers_every_checkpoint`
+- `tests/test_faults_matrix.py::test_the_matrix_is_the_size_the_spec_asks_for`
+- `tests/test_faults_matrix.py::test_the_disk_side_split_check_notices_a_group_under_two_stems`
+- `tests/test_faults_matrix.py::test_every_checkpoint_the_table_says_fires_is_reached_by_some_cell`
+- `tests/test_faults_matrix.py::test_a_plan_left_applying_is_finalized_the_same_way_by_apply_and_by_recovery`
+- `tests/test_faults_matrix.py::test_a_crash_before_undos_finalize_leaves_a_plan_a_second_undo_finishes`
+- `tests/test_faults_matrix.py::test_a_stranded_member_is_reported_never_healed_and_ten_runs_equal_one`
+- `tests/test_faults_matrix.py::test_recovery_against_an_unreachable_archive_changes_nothing`
+- `tests/test_faults_matrix.py::test_a_crash_inside_recovery_itself_is_recovered_by_the_next_invocation`
+- `tests/test_faults_matrix.py::test_a_live_photo_pair_survives_a_crash_between_its_members`
+- `tests/test_faults_matrix.py::test_an_aae_and_mov_unit_survives_a_crash_between_its_members`
+- `tests/test_faults_matrix.py::test_a_standalone_video_survives_a_crash_under_real_exiftool`
+
+## Safety constructions
+
+Vision S1-S4 built end to end across modules, driving the real commands.
+
+### `tests/test_m9_safety_constructions.py`
+
+- `tests/test_m9_safety_constructions.py::test_a_geocoded_event_label_selects_one_member_of_a_unit_and_decide_filter_widens_it`
+- `tests/test_m9_safety_constructions.py::test_a_place_fact_selects_one_member_of_a_unit_and_decide_filter_widens_it`
+- `tests/test_m9_safety_constructions.py::test_an_event_nav_group_selects_one_member_of_a_unit_and_decide_filter_widens_it`
+- `tests/test_m9_safety_constructions.py::test_pam_enrich_never_opens_a_cloud_placeholder_that_still_carries_a_sha256`
+- `tests/test_m9_safety_constructions.py::test_pam_enrich_between_plan_and_apply_leaves_the_plan_and_its_unit_intact`
+- `tests/test_m9_safety_constructions.py::test_pam_enrich_caption_between_plan_and_apply_renames_to_exactly_what_was_reviewed`
+- `tests/test_m9_safety_constructions.py::test_refreshing_the_caption_model_after_a_plan_exists_does_not_move_that_plan`
+- `tests/test_m9_safety_constructions.py::test_a_superseded_caption_still_explains_the_plan_it_produced`
+- `tests/test_m9_safety_constructions.py::test_a_partially_conforming_unit_survives_a_review_ui_rename_whole`
+- `tests/test_m9_safety_constructions.py::test_q_matching_the_ignored_editor_suffix_selects_one_member_and_widens_to_the_unit`
+- `tests/test_m9_safety_constructions.py::test_two_captioned_members_whose_stems_differ_still_take_the_primarys_scene`
+- `tests/test_m9_safety_constructions.py::test_the_captioner_is_inside_a_connect_watch_and_every_address_it_dials_is_loopback`
+- `tests/test_m9_safety_constructions.py::test_pam_enrich_caption_over_a_raw_file_changes_not_one_byte_of_the_archive`
+- `tests/test_m9_safety_constructions.py::test_the_path_budget_is_the_units_and_not_each_members_own`
+- `tests/test_m9_safety_constructions.py::test_every_unit_in_a_captioned_archive_agrees_about_tier_trust_and_attention`
+- `tests/test_m9_safety_constructions.py::test_a_crash_between_the_members_of_a_partially_conforming_unit_is_healed_whole`
+- `tests/test_m9_safety_constructions.py::test_a_caption_written_between_apply_and_undo_does_not_change_what_undo_puts_back`
+- `tests/test_m9_safety_constructions.py::test_no_construction_in_this_file_can_be_deleted_without_saying_so`
+
+### `tests/test_m11_safety_constructions.py`
+
+- `tests/test_m11_safety_constructions.py::test_every_POST_route_the_server_serves_is_classified_by_hand`
+- `tests/test_m11_safety_constructions.py::test_no_faces_route_reaches_a_plan_item_writer`
+- `tests/test_m11_safety_constructions.py::test_the_video_of_a_live_photo_takes_the_persons_name_the_photograph_earned`
+- `tests/test_m11_safety_constructions.py::test_the_face_rows_cover_the_photograph_and_not_its_video`
+- `tests/test_m11_safety_constructions.py::test_the_queue_offers_exactly_the_faces_the_label_will_write`
+- `tests/test_m11_safety_constructions.py::test_dismiss_ignores_only_the_faces_the_queue_showed`
+- `tests/test_m11_safety_constructions.py::test_a_cluster_whose_every_face_is_named_is_refused_BY_NAME`
+
+### `tests/test_m12_safety_constructions.py`
+
+- `tests/test_m12_safety_constructions.py::test_q1_a_units_two_readings_are_two_events_under_one_month_and_the_nav_says_so`
+- `tests/test_m12_safety_constructions.py::test_q1_decide_filter_on_either_event_decides_the_whole_unit_and_says_so`
+- `tests/test_m12_safety_constructions.py::test_q1_a_low_tier_unit_is_held_back_WHOLE_and_skip_and_reset_still_widen`
+- `tests/test_m12_safety_constructions.py::test_q1_a_companion_decided_the_OTHER_way_is_brought_along_and_named`
+- `tests/test_m12_safety_constructions.py::test_the_hash_oracle_reads_the_bytes_and_names_the_path_they_changed_at`
+- `tests/test_m12_safety_constructions.py::test_q1_the_unit_decided_through_one_event_applies_whole_and_undoes_exactly`
+- `tests/test_m12_safety_constructions.py::test_q1_attention_is_uniform_across_a_unit_whichever_member_carries_the_reading`
+- `tests/test_m12_safety_constructions.py::test_q2_the_sidecar_ocr_never_sees_is_uncovered_and_still_takes_the_scans_date`
+- `tests/test_m12_safety_constructions.py::test_q2_a_non_primary_members_own_camera_date_is_disclosed`
+- `tests/test_m12_safety_constructions.py::test_q3_the_live_route_table_is_exactly_the_hand_written_one`
+- `tests/test_m12_safety_constructions.py::test_q3_no_faces_route_reaches_a_plan_item_writer`
+- `tests/test_m12_safety_constructions.py::test_q3_decide_naming_ONE_member_writes_the_whole_unit`
+- `tests/test_m12_safety_constructions.py::test_q3_rename_and_restore_of_ONE_member_move_the_whole_units_stem`
+- `tests/test_m12_safety_constructions.py::test_q4_label_writes_exactly_the_faces_the_queue_offered_and_its_counts_are_true`
+- `tests/test_m12_safety_constructions.py::test_q4_dismiss_ignores_exactly_the_faces_the_queue_offered`
+- `tests/test_m12_safety_constructions.py::test_q4_a_cluster_named_above_the_floor_is_refused_BY_NAME_even_with_a_hidden_remainder`
+- `tests/test_m12_safety_constructions.py::test_q5_an_open_plan_applies_the_REVIEWED_name_after_a_later_ocr_change`
+- `tests/test_m12_safety_constructions.py::test_q5_the_status_instrument_pauses_at_every_read_status_makes_and_marks_one_case`
+- `tests/test_m12_safety_constructions.py::test_q5_pam_status_read_across_a_writers_commit_reports_before_or_after`
+- `tests/test_m12_safety_constructions.py::test_q5_pam_review_holds_the_lock_so_no_writer_commits_under_its_read_endpoints`
+- `tests/test_m12_safety_constructions.py::test_q5_clarification_8_a_fresh_catalog_reads_pams_own_names_as_filename_dates`
+
+### `tests/test_m13_safety_constructions.py`
+
+- `tests/test_m13_safety_constructions.py::test_the_instruments_see_a_rename_a_changed_byte_a_unit_and_the_accept_rule`
+- `tests/test_m13_safety_constructions.py::test_step1_the_full_chain_twice_on_a_scratch_tiny_library`
+- `tests/test_m13_safety_constructions.py::test_q1_look_alikes_differ_inside_one_unit_and_no_write_path_selects_by_them`
+- `tests/test_m13_safety_constructions.py::test_q1_no_write_module_reads_the_look_alike_field`
+- `tests/test_m13_safety_constructions.py::test_q1_accept_all_writes_whole_units_of_the_whole_plan_and_apply_moves_them_whole`
+- `tests/test_m13_safety_constructions.py::test_q2_a_unit_one_member_renamed_by_pam_and_one_by_the_user_is_read_per_file`
+- `tests/test_m13_safety_constructions.py::test_q3_the_live_route_table_is_exactly_the_hand_written_one_and_has_no_accept_route`
+- `tests/test_m13_safety_constructions.py::test_q3_every_plan_write_route_writes_the_whole_unit_from_one_member`
+- `tests/test_m13_safety_constructions.py::test_q4_pam_faces_calibrate_reads_and_never_writes_a_byte`
+- `tests/test_m13_safety_constructions.py::test_q5_pam_status_read_across_an_apply_reports_before_or_after`
+- `tests/test_m13_safety_constructions.py::test_q5_pam_verify_holds_the_lock_so_an_apply_under_it_renames_nothing`
+- `tests/test_m13_safety_constructions.py::test_q5_a_touch_after_apply_re_derives_only_what_an_mtime_may_decide`
+- `tests/test_m13_safety_constructions.py::test_q5_a_touch_between_plan_and_apply_refuses_the_whole_unit_and_moves_nothing`
+- `tests/test_m13_safety_constructions.py::test_q5_the_video_rule_after_apply_and_a_touch_compares_with_the_name_before_pam`
+- `tests/test_m13_safety_constructions.py::test_q6_each_review_write_then_a_plain_apply_renames_only_what_was_approved`
+- `tests/test_m13_safety_constructions.py::test_q6_apply_all_cancelled_approves_nothing_and_a_plain_apply_after_it_is_refused`
+- `tests/test_m13_safety_constructions.py::test_q6_a_faces_write_on_a_planned_archive_decides_no_plan_item`
+- `tests/test_m13_safety_constructions.py::test_q6_recovery_never_renames_an_undecided_item`
+
+### `tests/test_m14_safety_constructions.py`
+
+- `tests/test_m14_safety_constructions.py::test_step1_the_chain_through_the_page_and_through_the_console_is_one_implementation`
+- `tests/test_m14_safety_constructions.py::test_q1_a_list_group_holds_every_member_of_a_unit_whose_sidecar_has_no_capture`
+- `tests/test_m14_safety_constructions.py::test_q1_except_ids_naming_one_member_is_widened_back_and_named_overridden`
+- `tests/test_m14_safety_constructions.py::test_q1_a_shift_click_range_ending_inside_a_unit_writes_and_renames_the_unit_whole`
+- `tests/test_m14_safety_constructions.py::test_q1_a_show_more_boundary_inside_a_unit_selects_the_whole_unit`
+- `tests/test_m14_safety_constructions.py::test_q2_the_members_the_page_never_showed_are_counted_confirmed_and_renamed`
+- `tests/test_m14_safety_constructions.py::test_q3_the_live_route_table_of_pam_start_is_exactly_the_hand_written_one`
+- `tests/test_m14_safety_constructions.py::test_q3_every_read_route_and_the_preview_change_no_catalog_row_and_rename_nothing`
+- `tests/test_m14_safety_constructions.py::test_q3_every_plan_write_route_of_pam_start_writes_the_whole_unit_from_one_member`
+- `tests/test_m14_safety_constructions.py::test_q3_the_two_moving_routes_act_on_whole_units_only`
+- `tests/test_m14_safety_constructions.py::test_q4_label_and_dismiss_through_pam_start_write_exactly_the_faces_the_queue_offered`
+- `tests/test_m14_safety_constructions.py::test_q4_a_cluster_whose_every_face_is_named_is_refused_by_name_through_pam_start`
+- `tests/test_m14_safety_constructions.py::test_q9_every_call_on_the_way_to_the_verified_rename_is_listed_and_passes_the_runs_names`
+- `tests/test_m14_safety_constructions.py::test_q9_the_enumerator_sees_a_call_in_each_spelling`
+- `tests/test_m14_safety_constructions.py::test_q9_each_path_to_the_verified_rename_lists_a_flat_folder_once_per_run`
+- `tests/test_m14_safety_constructions.py::test_q5_a_confirm_screen_open_across_a_decision_in_another_tab_renames_nothing`
+- `tests/test_m14_safety_constructions.py::test_q5_a_selection_preview_held_across_a_read_job_writes_nothing_anywhere`
+- `tests/test_m14_safety_constructions.py::test_q5_the_look_alike_memory_does_not_outlive_its_plan`
+- `tests/test_m14_safety_constructions.py::test_q5_a_page_left_open_across_a_console_scan_after_the_server_stopped_renames_nothing`
+- `tests/test_m14_safety_constructions.py::test_q5_the_os_touches_a_file_between_confirm_and_rename`
+- `tests/test_m14_safety_constructions.py::test_q5_a_history_undo_of_a_session_a_later_page_rename_moved_again_moves_nothing`
+- `tests/test_m14_safety_constructions.py::test_q6_the_pages_apply_renames_only_what_was_approved_and_refuses_a_plan_with_none`
+- `tests/test_m14_safety_constructions.py::test_q6_the_selection_turns_no_undecided_item_into_a_rename`
+- `tests/test_m14_safety_constructions.py::test_q6_the_shortcuts_turn_no_undecided_item_into_a_rename`
+- `tests/test_m14_safety_constructions.py::test_q6_recovery_after_a_page_rename_dies_renames_no_undecided_item`
+- `tests/test_m14_safety_constructions.py::test_q7_the_control_the_persons_own_click_renames_the_four`
+- `tests/test_m14_safety_constructions.py::test_q7_no_request_without_a_person_at_the_page_reaches_a_rename`
+- `tests/test_m14_safety_constructions.py::test_q7_the_control_the_persons_own_undo_click_restores_the_four`
+- `tests/test_m14_safety_constructions.py::test_q7_no_request_without_a_person_at_the_page_reaches_an_undo`
+- `tests/test_m14_safety_constructions.py::test_q8_this_modules_read_spy_sees_a_file_opened_for_reading_by_either_open`
+- `tests/test_m14_safety_constructions.py::test_q8_the_lists_thumbnail_never_reads_a_file_that_became_cloud_only`
+- `tests/test_m14_safety_constructions.py::test_q8_the_folder_chooser_reads_no_file_in_the_folders_it_lists`
+- `tests/test_m14_safety_constructions.py::test_q8_the_read_jobs_progress_does_not_read_a_file_that_became_cloud_only`
+- `tests/test_m14_safety_constructions.py::test_q8_confirm_counts_and_the_rename_read_nothing_of_a_file_that_became_cloud_only`
+- `tests/test_m14_safety_constructions.py::test_the_hunt_holds_every_question_at_its_floor`
+
+## Installer source guards
+
+The installer script's own safety rules, read from `tools/installer/pam.iss`;
+these never skip.
+
+### `tests/test_installer_source.py`
+
+- `tests/test_installer_source.py::test_the_production_view_is_not_vacuous`
+- `tests/test_installer_source.py::test_every_UninstallDelete_entry_is_one_exact_file_inside_app`
+- `tests/test_installer_source.py::test_the_code_never_deletes_a_folder_and_deletes_files_only_in_the_installer_cache`
+- `tests/test_installer_source.py::test_install_replaces_only_the_interpreter_and_exiftool_trees`
+- `tests/test_installer_source.py::test_the_installer_is_per_user`
+- `tests/test_installer_source.py::test_restart_manager_is_off_both_ways_and_no_mutex_stands_in_for_E11`
+- `tests/test_installer_source.py::test_pam_updates_flags_are_the_ones_the_iss_agrees_with`
+- `tests/test_installer_source.py::test_the_updater_waits_30_s_and_any_other_pam_gets_the_2_s_grace`
+- `tests/test_installer_source.py::test_setup_takes_setup_lock_before_it_looks_for_a_running_pam`
+- `tests/test_installer_source.py::test_the_run_file_grammar_matches_pams`
+- `tests/test_installer_source.py::test_the_installer_reads_no_environment_variable`
+- `tests/test_installer_source.py::test_the_test_hooks_are_reachable_only_from_a_test_build`
+- `tests/test_installer_source.py::test_a_test_build_cannot_redirect_the_production_root_or_appid`
+- `tests/test_installer_source.py::test_the_component_is_labelled_from_pam_and_kept_on_upgrade`
+- `tests/test_installer_source.py::test_the_record_written_is_the_one_pam_reads`
+- `tests/test_installer_source.py::test_the_payload_reaches_app_and_the_component_its_site_packages`
+- `tests/test_installer_source.py::test_the_shortcuts_start_pam_check_for_updates_and_repair`
+- `tests/test_installer_source.py::test_the_path_task_is_off_unless_chosen`
+- `tests/test_installer_source.py::test_a_REQUIRED_inno_stack_that_is_unavailable_fails_instead_of_skipping`
+- `tests/test_installer_source.py::test_the_control_WITHOUT_the_inno_requirement_the_same_collection_succeeds`
+- `tests/test_installer_source.py::test_the_inno_marker_is_registered`
+- `tests/test_installer_source.py::test_the_structural_reader_is_not_vacuous`
+- `tests/test_installer_source.py::test_M4601_the_exclusion_takes_setup_lock_FIRST_and_both_entries_use_it`
+- `tests/test_installer_source.py::test_M4608_the_UPDATERPID_value_is_read_kept_and_used_twice`
+- `tests/test_installer_source.py::test_M4619_the_updater_is_waited_for_only_while_its_run_file_is_held`
+- `tests/test_installer_source.py::test_M4620_held_pids_never_counts_the_excluded_pid_and_the_updater_is_the_excluded_one`
+- `tests/test_installer_source.py::test_F_P1_the_previous_PATH_entry_is_read_before_the_install_step_and_used_after`
+- `tests/test_installer_source.py::test_F_P3_an_app_folder_already_on_the_PATH_is_not_recorded_as_the_installers`
+- `tests/test_installer_source.py::test_F_P2_a_repair_keeps_the_previous_installer_installers_json_lists`
+- `tests/test_installer_source.py::test_every_message_after_the_copy_started_names_the_Repair_pam_shortcut`
+- `tests/test_installer_source.py::test_the_folder_is_checked_on_the_folder_page_and_again_before_the_copy`
+

@@ -1,0 +1,464 @@
+"""Spec 8.2's read API: the three GET endpoints the review page is built out of (Task 8).
+
+THIS MODULE IMPORTS NOTHING FROM `server.py` AT RUNTIME, and that is what keeps the two
+one-directional: `server.py` imports `HANDLERS`, `ApiRequest` and `ApiError` from here and
+wires them into every `ReviewServer` it builds. The server type is needed only for
+annotation, so it arrives under `TYPE_CHECKING`.
+
+EVERY HANDLER IS A READER. It opens one connection through the server's per-request
+factory (clarification 5), reads, and returns a JSON-serializable object. Nothing here
+writes, and nothing here recomputes a name, a tier or a score - `tokens_json` and
+`trust_reasons_json` are parsed exactly once, in `catalog/repo/review.py`, and this module
+hands that object to `json.dumps` without touching a field of it (clarification 6). The
+contract is SEMANTIC preservation, not byte-for-byte: these documents are embedded inside
+a larger response, so whitespace and escaping may legitimately differ. What may not differ
+is the meaning - same fields, same values, same array order, in both documents, because
+order is meaning in both.
+
+TWO REFUSALS, AND THEY ARE NOT THE TOKEN GATE'S. A request that reaches a handler has
+already proved it carries the session token, so it gets a reason: an unknown plan or item
+id is a 404 with `{error}`, and a query value the API cannot read is a 400 NAMING THE
+PARAMETER (UX 1.4 - the page shows these, and a refusal that does not say which control is
+wrong is a dead end). Amendment A3's silent empty 404 is a different thing entirely: it is
+what an UNAUTHORIZED or unrouted request gets, and it stays empty precisely so a probing
+page learns nothing. Both are honoured, because they answer different questions.
+"""
+
+import json
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+from pam.catalog import repo
+from pam.catalog.repo.review import ReviewItem
+from pam.webui import thumbs
+
+if TYPE_CHECKING:  # pragma: no cover - import for typing only, never at runtime
+    from pam.webui.server import ReviewServer
+
+BAD_REQUEST_STATUS = 400
+NOT_FOUND_STATUS = 404
+# Task 9's refusal: the request was well-formed and the caller may not have it. Spec
+# 8.2 uses it for the two things a decide or a rename can legitimately be told - the
+# rows are not in a state that can be decided, and the name is already taken - both of
+# which a page fixes by showing the user something, not by re-encoding the request.
+CONFLICT_STATUS = 409
+
+# Spec 8.2's paging bound, server-side. A browser asking for the whole plan in one
+# response is how a 20,000-item archive becomes a page that never paints; the plan
+# suggests 200 and the grid renders far fewer than that at a time.
+MAX_LIMIT = 200
+DEFAULT_LIMIT = 100
+
+# Spec 8.2's thumbnails are extracted JPEGs, so this is the one non-JSON response the
+# API produces. See `RawResponse` below for how it leaves the router.
+JPEG_TYPE = "image/jpeg"
+
+# UX spec 5's nav labels. Spelled out rather than taken from `calendar.month_name`, which
+# is locale-dependent: the same plan must not read "July" on one machine and "juillet" on
+# another when nothing about the archive changed.
+MONTH_NAMES = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+UNDATED_LABEL = "Undated"
+
+
+@dataclass(frozen=True)
+class ApiRequest:
+    """One API call's inputs: the path parameters, and the parsed query string.
+
+    `query` maps a name to EVERY value given for it, which is what `parse_qs` returns and
+    what lets `?tier=high&tier=low` be a 400 rather than a silent choice of one of them.
+    """
+
+    params: Mapping[str, str]
+    query: Mapping[str, list[str]]
+    # Task 9: the POST body, already decoded. `{}` for a GET and for a POST that sent
+    # none (spec 8.2's `restore` carries no fields). ALWAYS a mapping - `parse_body`
+    # refuses anything else before a handler is reached - so every write handler reads
+    # `request.body.get(...)` without first asking what shape arrived.
+    body: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RawResponse:
+    """A handler's answer that is NOT JSON: content type plus the bytes to send.
+
+    Task 10's `/api/thumb/{file_id}` is the only producer and spec 8.2 is why: the
+    endpoint's whole job is to hand the browser an `image/jpeg` that an `<img>` tag can
+    point at, and JSON is the wrong envelope for bytes. `server._api` sends this through
+    unencoded and `json.dumps` everything else, which keeps the route TABLE the thing
+    that routes - a binary endpoint is a row like any other, not a branch in the router.
+    """
+
+    content_type: str
+    body: bytes
+
+
+class ApiError(Exception):
+    """A refusal a handler wants the browser to read: a status plus one sentence."""
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def _not_found(message: str) -> ApiError:
+    return ApiError(NOT_FOUND_STATUS, message)
+
+
+def _bad_request(parameter: str, message: str) -> ApiError:
+    """400, and the sentence always begins with the parameter the page must fix."""
+    return ApiError(BAD_REQUEST_STATUS, f"{parameter}: {message}")
+
+
+def _conflict(message: str) -> ApiError:
+    """409: pam understood the request and is refusing it on the catalog's state."""
+    return ApiError(CONFLICT_STATUS, message)
+
+
+# --- reading the request body (Task 9) -----------------------------------------------
+
+
+def parse_body(raw: bytes) -> Mapping[str, Any]:
+    """The bytes of a POST body as spec 8.2's JSON object. `{}` when none was sent.
+
+    A body that is not JSON, or is JSON but not an OBJECT, is a 400 that says which -
+    `[1, 2]` and `null` are both valid JSON and neither can carry `action`, and a page
+    that sent one deserves to be told that rather than to watch every field read as
+    missing. The parameter name is `body` because that is what the page must fix.
+
+    Never raises anything but `ApiError`: `json.loads` on arbitrary bytes can raise
+    `UnicodeDecodeError` as easily as `JSONDecodeError`, and a browser posting a
+    mis-encoded form must not become a 500 with a traceback in the session log.
+    """
+    if not raw:
+        return {}
+    try:
+        document = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise _bad_request("body", "is not JSON pam can read") from None
+    if not isinstance(document, dict):
+        raise _bad_request("body", 'must be a JSON object like {"action": "approve"}')
+    return document
+
+
+# --- reading the query string --------------------------------------------------------
+
+
+def _single(request: ApiRequest, name: str) -> str | None:
+    """One value for `name`, or None if it was not given. Two values is a 400.
+
+    Silently taking the first would make `?tier=high&tier=low` mean `high`, which is a
+    page showing a filter it was not asked for and never saying so.
+    """
+    values = request.query.get(name)
+    if not values:
+        return None
+    if len(values) > 1:
+        raise _bad_request(name, "given more than once - pam cannot tell which you meant")
+    return values[0]
+
+
+def _plan_id(request: ApiRequest) -> int:
+    """The `{id}` out of the path. Not an integer -> 404, because no such plan exists."""
+    raw = request.params["id"]
+    if not raw.isdigit():
+        raise _not_found(f"pam does not know a plan with id {raw!r}")
+    return int(raw)
+
+
+def _file_id(request: ApiRequest) -> int:
+    """The `{file_id}` out of the path. Spec 8.2's thumb route is keyed by `files.id`.
+
+    NOT a plan item id, and the difference matters: one file can appear in several plans
+    and its embedded preview is a property of the FILE, so the cache is keyed by the
+    file's sha256 and the route is keyed by the file's id.
+    """
+    raw = request.params["file_id"]
+    if not raw.isdigit():
+        raise _not_found(f"pam does not know a file with id {raw!r}")
+    return int(raw)
+
+
+def _one_of(request: ApiRequest, name: str, allowed: tuple[str, ...]) -> str | None:
+    value = _single(request, name)
+    if value is None or value == "":
+        return None
+    if value not in allowed:
+        raise _bad_request(name, f"{value!r} is not one of {', '.join(allowed)}")
+    return value
+
+
+def _attention(request: ApiRequest) -> bool | None:
+    """`attention=1` / `attention=0`, per spec 8.2. Anything else is a 400.
+
+    Tri-state on purpose: absent means "do not filter on it", and `0` is a real request
+    for the items that need no attention - the complement UX 5a's banner counts against.
+    """
+    value = _single(request, "attention")
+    if value is None or value == "":
+        return None
+    if value not in ("0", "1"):
+        raise _bad_request("attention", f"{value!r} is not 0 or 1")
+    return value == "1"
+
+
+def _group(request: ApiRequest) -> str | None:
+    """A year, a `YYYY-MM`, or `undated` (amendment A4). Anything else is a 400."""
+    value = _single(request, "group")
+    if value is None or value == "":
+        return None
+    if value == repo.UNDATED:
+        return value
+    head, _, tail = value.partition("-")
+    if len(head) == 4 and head.isdigit() and (tail == "" or _is_month(tail)):
+        return value
+    raise _bad_request(
+        "group", f"{value!r} is not a year, a year-month like 2019-07, or {repo.UNDATED}"
+    )
+
+
+def _is_month(text: str) -> bool:
+    return len(text) == 2 and text.isdigit() and 1 <= int(text) <= 12
+
+
+def _bounded_int(request: ApiRequest, name: str, default: int, maximum: int) -> int:
+    value = _single(request, name)
+    if value is None or value == "":
+        return default
+    # `isdigit` rather than a try/except around `int`: it refuses `-1`, `+1`, ` 1` and
+    # every unicode oddity `int()` would happily accept, so the bound below is the only
+    # other thing left to check.
+    if not value.isdigit():
+        raise _bad_request(name, f"{value!r} is not a whole number")
+    number = int(value)
+    if number > maximum:
+        raise _bad_request(name, f"{number} is more than the maximum of {maximum}")
+    return number
+
+
+def _item_filter(request: ApiRequest) -> repo.ItemFilter:
+    """Spec 8.2's five filters plus the sort, each validated by name."""
+    q = _single(request, "q")
+    return repo.ItemFilter(
+        group=_group(request),
+        tier=_one_of(request, "tier", repo.TIERS),
+        status=_one_of(request, "status", tuple(sorted(repo.ITEM_STATUSES))),
+        attention=_attention(request),
+        q=q if q else None,
+        sort=_one_of(request, "sort", repo.SORTS) or repo.SORT_TRUST_ASC,
+    )
+
+
+# --- the three endpoints -------------------------------------------------------------
+
+
+def counts(items: list[ReviewItem]) -> dict[str, int]:
+    """UX 5's header numbers and UX 5a's banner, from one plan's rows.
+
+    THE ONE PLACE THIS ARITHMETIC LIVES. `/api/plan/{id}` renders it, and every Task 9
+    write response carries it so the header updates without a second request - and a
+    second implementation would let the number the page shows after a decision disagree
+    with the number it shows after a reload, which is the same class of failure spec 8.2
+    names when it says the banner must not claim twenty items need attention while the
+    filter shows nineteen.
+    """
+    by_status = _counted(item.status for item in items)
+    return {
+        "total": len(items),
+        "approved": by_status.get("approved", 0),
+        "skipped": by_status.get("skipped", 0),
+        # Everything that is neither, rather than `by_status["proposed"]`: an open plan's
+        # items are proposed, approved or skipped today, and a status this endpoint had
+        # not heard of would otherwise vanish out of a summary whose job is to account for
+        # the whole plan (`webui.__init__._read_counts` records the same reasoning).
+        "remaining": len(items) - by_status.get("approved", 0) - by_status.get("skipped", 0),
+        "attention": sum(1 for item in items if item.attention),
+    }
+
+
+def plan_summary(server: "ReviewServer", request: ApiRequest) -> dict[str, Any]:
+    """`/api/plan/{id}` - the header's data (UX 5) and Smart Review's banner (UX 5a).
+
+    The counts are computed from the SAME rows the items endpoint serves, so the banner
+    cannot claim twenty items need attention while the filter shows nineteen.
+    """
+    plan_id = _plan_id(request)
+    with server.connection() as conn:
+        header = repo.plan_header(conn, plan_id)
+        if header is None:
+            raise _not_found(f"pam does not know a plan with id {plan_id}")
+        items = repo.plan_rows(conn, plan_id)
+    return {
+        "plan_id": header.id,
+        "archive_root": str(server.workspace.archive_root),
+        "template": header.template,
+        "created_at": header.created_at,
+        "status": header.status,
+        **counts(items),
+        "tiers": _counted(item.tier for item in items),
+        "statuses": _counted(item.status for item in items),
+    }
+
+
+def plan_groups(server: "ReviewServer", request: ApiRequest) -> dict[str, Any]:
+    """`/api/plan/{id}/groups` - Year -> Month with counts at both levels, Undated last.
+
+    Grouped by the DATE TOKEN'S VALUE, never by `capture_dt` (spec 8.2), so the nav says
+    what the cards say. `repo.nav_tree` owns the arithmetic; this adds only the copy.
+    """
+    plan_id = _plan_id(request)
+    with server.connection() as conn:
+        if repo.plan_header(conn, plan_id) is None:
+            raise _not_found(f"pam does not know a plan with id {plan_id}")
+        items = repo.plan_rows(conn, plan_id)
+    return {
+        "plan_id": plan_id,
+        "groups": [
+            {
+                "key": year.key,
+                "label": UNDATED_LABEL if year.key == repo.UNDATED else year.key,
+                "count": year.count,
+                "months": [
+                    {
+                        "key": month.key,
+                        "label": MONTH_NAMES[int(month.key[5:7]) - 1],
+                        "count": month.count,
+                    }
+                    for month in year.months
+                ],
+            }
+            for year in repo.nav_tree(items)
+        ],
+    }
+
+
+def plan_items(server: "ReviewServer", request: ApiRequest) -> dict[str, Any]:
+    """`/api/plan/{id}/items` - one page of cards, filtered, ordered and sliced.
+
+    `total` is the size of the FILTERED set, not of the page and not of the plan: it is
+    what "showing 1-100 of 412" is read from, and paging past the end must be an empty
+    page rather than a wrapped one.
+    """
+    plan_id = _plan_id(request)
+    filt = _item_filter(request)
+    offset = _bounded_int(request, "offset", 0, maximum=2**31)
+    limit = _bounded_int(request, "limit", DEFAULT_LIMIT, maximum=MAX_LIMIT)
+    with server.connection() as conn:
+        if repo.plan_header(conn, plan_id) is None:
+            raise _not_found(f"pam does not know a plan with id {plan_id}")
+        items = repo.plan_rows(conn, plan_id)
+    sizes = repo.unit_sizes(items)
+    chosen = repo.select_items(items, filt)
+    return {
+        "plan_id": plan_id,
+        "total": len(chosen),
+        "offset": offset,
+        "limit": limit,
+        "items": [
+            _card(item, sizes[item.unit_key]) for item in chosen[offset : offset + limit]
+        ],
+    }
+
+
+def _card(item: ReviewItem, unit_size: int) -> dict[str, Any]:
+    """One item, as the grid renders it. Every value is read; none is recomputed."""
+    return {
+        "id": item.id,
+        "file_id": item.file_id,
+        "old_rel_path": item.old_rel_path,
+        "rel_dir": item.rel_dir,
+        "old_filename": item.old_filename,
+        "generated_filename": item.generated_filename,
+        "new_filename": item.new_filename,
+        "media_type": item.media_type,
+        "ext": item.ext,
+        "tier": item.tier,
+        "trust_score": item.trust_score,
+        "status": item.status,
+        "unit_key": item.unit_key,
+        "unit_size": unit_size,
+        "orientation": item.orientation,
+        "placeholder": item.placeholder,
+        "has_thumb": item.thumbnailable,
+        "attention": item.attention,
+        "date": item.date,
+        # The planner's own two documents, parsed once and passed through unedited.
+        "tokens": item.tokens,
+        "trust_reasons": item.trust_reasons,
+    }
+
+
+def thumb(server: "ReviewServer", request: ApiRequest) -> RawResponse:
+    """`/api/thumb/{file_id}?variant=grid|full` - the extracted embedded preview.
+
+    THE FIRST REQUEST EXTRACTS, CACHES AND RETURNS IN ONE ROUND TRIP. Nothing pre-warms
+    the cache, so a 200 here is either a cache hit or an extraction that just happened,
+    and the browser cannot tell the two apart - which is the point.
+
+    404 IS NOT AN ERROR HERE; IT IS THE GLYPH SIGNAL (spec 8.2). A video, a sidecar, an
+    `other`, a file with no sha256, a cloud placeholder, a source that is no longer on
+    disk and a photo whose camera embedded no preview all arrive as `None` from
+    `get_thumb`, and the frontend draws the same glyph card with an extension badge for
+    every one of them. An unreadable id or an unknown file is the same 404 with a
+    sentence, because there is nothing else a page could usefully be told.
+
+    THE EXTRACTION RUNS OUTSIDE THE DB LOCK (plan clarification 5). `server.connection()`
+    holds the single lock for its whole `with` block, and extraction is a subprocess plus
+    a disk write - so the block does the row lookup, and nothing else.
+    """
+    file_id = _file_id(request)
+    variant = _one_of(request, "variant", thumbs.VARIANTS) or thumbs.GRID
+    with server.connection() as conn:
+        file_row = repo.file_by_id(conn, file_id)
+    if file_row is None:
+        raise _not_found(f"pam does not know a file with id {file_id}")
+    path = thumbs.get_thumb(server.workspace, file_row, variant)
+    if path is None:
+        raise _not_found(f"pam has no {variant} preview it can show for that file")
+    return RawResponse(JPEG_TYPE, path.read_bytes())
+
+
+def _counted(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+# The route table `ReviewServer` wires in. A `{name}` segment is a path parameter; every
+# other segment matches literally.
+#
+# THE READ ROWS. Task 9's four POST rows are `write_api.WRITE_HANDLERS` and `ReviewServer`
+# merges the two tables, which is still rows rather than router branches - `_api` and
+# `_match_route` were not touched. They are a separate table for one mechanical reason:
+# every write handler needs `ApiError`, `ApiRequest`, `_item_filter` and `counts` from
+# this module, so `write_api` imports THIS module and this module cannot import it back.
+# The alternative was moving the request primitives into a third module, which would have
+# rewritten Task 8's file to buy nothing this comment does not say.
+HANDLERS: dict[tuple[str, str], Callable[["ReviewServer", ApiRequest], Any]] = {
+    ("GET", "plan/{id}"): plan_summary,
+    ("GET", "plan/{id}/groups"): plan_groups,
+    ("GET", "plan/{id}/items"): plan_items,
+    # Task 10. Keyed by `files.id`, not by a plan item, and it answers in `image/jpeg`
+    # rather than JSON - see `RawResponse`.
+    ("GET", "thumb/{file_id}"): thumb,
+}
+
+
+def error_body(message: str) -> bytes:
+    """The one shape a refusal takes on the wire, so the page has one thing to render."""
+    return json.dumps({"error": message}).encode("utf-8")

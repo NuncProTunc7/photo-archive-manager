@@ -1,0 +1,34 @@
+{
+  "role": "CORRECTNESS ORACLE, written BY HAND from what each PNG shows, BEFORE pam's pipeline was run on any fixture (M12 Task 12 Part A, Step A3, rev 4.1 R3). Never regenerated from a pipeline's output.",
+  "rendered_with": "Pillow 12.3.0, ImageFont.load_default(size=64) = Aileron Regular; generator source in docs/implementation-notes/m12-ocr-pack-spike.md",
+  "conventions": {
+    "lines": "the expected lines in reading order. Line count and order are compared exactly; each line's TEXT is compared after removing all whitespace from both sides (rev 4.2, R42-A). An entry that is a list accepts any one of its forms (only the apostrophe varies: ' or U+2019, both of which P8 accepts)",
+    "date": "the date find_date(lines, floor=0.5) must return over pam's answer, or null; computed over pam's RAW lines, never over whitespace-normalised text (R42-A)",
+    "k11": "true for D10's limit fixtures (tilted, inverted, border-touching, mixed-length): K11 counts each as RIGHT, MISSING or WRONG. K4 and the correctness test govern k11:false fixtures; a k11:true fixture must never yield a date other than truth's (R42-A, R42-D)"
+  },
+  "rulings": "2026-09-26, M12 plan rev 4.2, adopted by the owner 2026-09-26: R42-A whitespace-insensitive line text, over which fixtures K4 applies; R42-B low_contrast.png retired (K9 found no sub-0.5 line; kept in history at bc1eaf8). No fixture's expected lines or date were changed.",
+  "fixtures": {
+    "date_iso.png": {"lines": ["1998-07-04"], "date": "1998-07-04", "k11": false},
+    "date_imprint.png": {"lines": [["'98 7 4", "’98 7 4"]], "date": "1998-07-04", "k11": false},
+    "date_words.png": {"lines": ["July 4, 1998"], "date": "1998-07-04", "k11": false},
+    "colour_red_on_blue.png": {"lines": ["1998-07-04"], "date": "1998-07-04", "k11": false},
+    "colour_blue_on_red.png": {"lines": ["1998-07-04"], "date": "1998-07-04", "k11": false},
+    "blank.png": {"lines": [], "date": null, "k11": false},
+    "order.png": {
+      "lines": ["ROLL", "FILM", "1998-07-04"],
+      "date": "1998-07-04",
+      "k11": false,
+      "note": "row one: ROLL left, FILM right and drawn 3 px HIGHER (P-8's ORDER_TOL swap); row two: one word"
+    },
+    "solid_red.png": {"lines": [], "date": null, "k11": false, "note": "K5a's tensor fixture: pure (255, 0, 0), no text"},
+    "tilt_3.png": {"lines": ["1998-07-04"], "date": "1998-07-04", "k11": true},
+    "tilt_8.png": {"lines": ["1998-07-04"], "date": "1998-07-04", "k11": true},
+    "inverted.png": {"lines": ["1998-07-04"], "date": "1998-07-04", "k11": true, "note": "date_iso rotated 180 degrees; what the print SAYS, read the right way up"},
+    "border.png": {"lines": ["1998-07-04"], "date": "1998-07-04", "k11": true, "note": "glyphs touch all four edges (margin 0)"},
+    "mixed.png": {
+      "lines": [["'98 7 4", "’98 7 4"], "ROLL 12", "July 4, 1998 at the lake"],
+      "date": "1998-07-04",
+      "k11": true
+    }
+  }
+}

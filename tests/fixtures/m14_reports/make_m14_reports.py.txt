@@ -1,0 +1,28 @@
+"""Write two session reports with v0.1-m14's own writer (run with PYTHONPATH=<v0.1-m14 tree>)."""
+import logging
+import sys
+from pathlib import Path
+
+import pam.execute.reporter as reporter
+from pam.execute.apply import ApplySummary
+
+out = Path(sys.argv[1])
+out.mkdir(parents=True, exist_ok=True)
+assert "m14src" in reporter.__file__, reporter.__file__
+log = logging.getLogger("gen")
+
+clean = ApplySummary(
+    session_id="s-20261101-101500", renamed=3, approved=3, elapsed_s=0.4,
+    archive_root=Path(r"C:\Users\user\Pictures\Archive"), plan_id=4,
+    started_at="2026-11-01T10:15:00",
+)
+reporter.write_session_report(out, clean, log)
+
+messy = ApplySummary(
+    session_id="s-20261102-091200", renamed=2, approved=4, not_approved=1, elapsed_s=1.2,
+    stranded=["2019-07-04_001.JPG"], recovery_notes=["IMG_9.JPG needs your attention."],
+    archive_root=Path(r"C:\Users\user\Pictures\Archive"), plan_id=7,
+    started_at="2026-11-02T09:12:00",
+)
+messy.record_failure("IMG_2.JPG", "pam could not rename this file.")
+reporter.write_session_report(out, messy, log)

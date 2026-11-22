@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pam</title>
+    <!--
+      RELATIVE hrefs, always. Every route lives under the per-session token prefix and
+      the browser supplies that prefix from the address bar, so the token is never
+      written into a static file - spec 8.2 puts it in exactly two places, the printed
+      URL and the address bar, and a shipped asset is neither.
+
+      NO EXTERNAL URL APPEARS ANYWHERE IN THIS PAGE (spec 8.2 rev 12): no CDN, no font,
+      no scheme of any kind. A page that fetches a font announces the user's review
+      session to a third party, and pam's network canary watches pam's own sockets,
+      not the browser's.
+    -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="review-page">
+    <!--
+      M14 Task 2 Step 6b (U4): the review page has NO phone notice. U4 makes the layout
+      work at every width instead; the faces page keeps its own notice.
+    -->
+    <div id="page">
+      <!--
+        M14 Task 1's LAYOUT SHELL (U2, U4): a header, the content column and a sticky bottom
+        bar, styled under `.review-page` so the faces page - which shares this stylesheet and
+        these ids - gets the tokens and nothing else (U20).
+
+        The folder line and the step pills are SLOTS, and they ship hidden. The folder line
+        is filled when the page learns its folder (M14 Task 4). The pills are W23's copy, and
+        since M14 Task 6c (ruling B6) every step they name is true: `pam-confirm.js` shows them
+        once the list is drawn (wide layout only, `style.css`) and marks `4 Rename` current on
+        the Confirm screen. Welcome keeps them hidden: no folder is chosen there yet. The logo
+        is a mark, not text.
+      -->
+      <header id="header" class="shell-header">
+        <div class="shell-top">
+          <span class="shell-logo" aria-hidden="true"></span>
+          <p id="folder-line" class="folder-line" hidden></p>
+          <ol id="steps" class="steps" aria-label="Steps" hidden>
+            <li data-step="done">1 Folder ✓</li>
+            <li data-step="done">2 Read ✓</li>
+            <li id="step-review" data-step="current">3 Review</li>
+            <li id="step-rename" data-step="next">4 Rename</li>
+          </ol>
+        </div>
+        <div id="header-row" class="header-row">
+          <h1 id="plan-title">pam review</h1>
+          <span id="estimate" hidden></span>
+          <!-- M15 Task 3 (AM3, E7): History, when the bound folder has a rename session. -->
+          <button id="list-history" type="button" hidden></button>
+        </div>
+
+        <div id="controls" class="controls">
+          <!--
+            M14 Task 2 Step 6b: the card page's `Needs attention` button and its Tier and
+            Status selects are gone. The list's tabs (W5) and the left panel's trust filter
+            replace them; search, sort and `Clear filters` below drive the list.
+          -->
+
+          <!--
+            A4: the placeholder names only what search matches TODAY. M10 Task 10 adds
+            PLACES - the `place` facts M9's geocoder writes, reached through
+            `review.SEARCHABLE_FACT_KINDS` - and the copy changes in the same commit as
+            the predicate, because a box that silently returns nothing for a thing it
+            appears to offer is UX spec 1.4's dead end wearing a feature's clothes. UX
+            spec 5 rev 10 and design spec 8.2 rev 16 moved place search to M10 and require
+            it and this string to land together, exactly as rev 8 required of M9's event
+            labels before it.
+
+            CAPTIONS AND SCENES ARE DELIBERATELY ABSENT, and so are people. Neither
+            normative document promises caption or scene search at any milestone (plan
+            clarification 6), and people join in M11 - so naming either here would be the
+            same dead end from the other side. A scene word still reaches this box through
+            the proposed FILENAME whenever `{scene}` is templated.
+          -->
+          <label class="visually-hidden" for="search">Search names, events and places</label>
+          <input
+            id="search"
+            type="search"
+            placeholder="Search old and new file names, event labels, and places"
+          />
+
+          <!--
+            UX spec 5a: "Sort within every view puts lowest trust first so attention
+            lands where it pays; a sort toggle offers date order for chronological
+            review." The two values are spec 8.2's own vocabulary for `?sort=`.
+          -->
+          <label for="sort">Sort</label>
+          <select id="sort">
+            <option value="trust_asc">Lowest trust first</option>
+            <option value="date">Date order</option>
+          </select>
+
+          <button id="clear-filters" type="button">Clear filters</button>
+        </div>
+
+        <div id="presets" class="presets">
+          <!--
+            UX spec 5: there is deliberately NO "Approve All". Low-tier items are never
+            bulk-approvable (vision 6a.3) and the server enforces that, not this page.
+            `Accept all` (F1 R2, M13) is not one either: it approves the plan's undecided
+            names EXCEPT Low, never re-approves a skip, and says how many Low it left.
+            M14 Task 2 Step 6b (U2): the two preset BUTTONS are gone; the preset route stays.
+          -->
+          <button id="accept-all" type="button">Accept all<span id="accept-all-count" class="preset-count"></span></button>
+        </div>
+
+<!--
+          UX spec 5's fourth state: U12 (M14 Task 5e), spelled verbatim. `serverGone`
+          (`pam-core.js`) draws the same three sentences from its copy when it shows this.
+        -->
+        <div id="error-banner" class="banner" role="alert" hidden>
+          <p id="error-banner-stopped">pam has stopped.</p>
+          <p>
+            <strong id="error-banner-lost">Nothing is lost: every rename is written down before it happens.</strong>
+            <span id="error-banner-restart">Start pam again and it will put things right before it does anything else.</span>
+          </p>
+        </div>
+      </header>
+
+      <!--
+        M14 Task 4 Step 7 (W18, U10, U13): WELCOME, the page `pam start` opens with no folder.
+        It ships hidden; `app.js` shows it only when the ping says the server has no plan, and
+        then hides the header's rows, the list and the footer it stands in for (the dead-server
+        banner above stays reachable). Every word is drawn by `pam-welcome.js`, W18's copy
+        verbatim. OD-4: W18's "start reviewing while pam keeps reading" line is not drawn.
+      -->
+      <section id="welcome" class="welcome" aria-labelledby="welcome-title" hidden>
+        <h1 id="welcome-title"></h1>
+        <p id="welcome-lead" class="welcome-lead"></p>
+        <ol class="welcome-steps">
+          <li id="welcome-step-folder" data-step="current">
+            <h2 id="welcome-folder-title"></h2>
+            <p id="welcome-folder" class="welcome-folder" hidden></p>
+            <button id="welcome-change" type="button" hidden></button>
+            <div id="welcome-recovery" class="banner" hidden>
+              <p id="welcome-recovery-title"></p>
+              <p id="welcome-recovery-line"></p>
+            </div>
+            <div id="welcome-chooser">
+              <h3 id="welcome-known-title" hidden></h3>
+              <ul id="welcome-known" class="welcome-picks"></ul>
+              <p id="welcome-place" class="welcome-folder" hidden></p>
+              <button id="welcome-up" type="button" hidden></button>
+              <h3 id="welcome-folders-title" hidden></h3>
+              <ul id="welcome-folders" class="welcome-picks"></ul>
+              <button id="welcome-choose-this" type="button" class="primary" hidden></button>
+              <form id="welcome-paste" class="welcome-paste">
+                <label id="welcome-paste-label" for="welcome-paste-path"></label>
+                <input id="welcome-paste-path" type="text" autocomplete="off" />
+                <button id="welcome-paste-choose" type="submit"></button>
+              </form>
+            </div>
+            <p id="welcome-error" class="welcome-error" role="alert" hidden></p>
+          </li>
+          <li id="welcome-step-reading" data-step="next">
+            <h2 id="welcome-reading-title"></h2>
+            <button id="welcome-start-reading" type="button" class="primary" hidden></button>
+            <p id="welcome-reading-progress" class="welcome-progress" hidden></p>
+            <button id="welcome-stop" type="button" hidden></button>
+            <div id="welcome-reading-lines" class="welcome-lines" hidden></div>
+          </li>
+          <li id="welcome-step-review" data-step="next">
+            <h2 id="welcome-review-title"></h2>
+            <button id="welcome-review" type="button" class="primary" disabled></button>
+          </li>
+        </ol>
+        <ul id="welcome-promises" class="welcome-promises"></ul>
+        <!-- M15 Task 3 (AM3, E7): History, when the bound folder has a rename session. -->
+        <button id="welcome-history" type="button" hidden></button>
+      </section>
+
+      <!--
+        M14 Task 6c (U6, U8 W19-W21, U11, U12, U22): READY TO RENAME, then the rename's progress,
+        then Done or what stopped it. It ships hidden; the footer's `Rename N files` shows it in
+        place of the list (Welcome's parts), and `Keep checking names` hides it again. Every word
+        is drawn by `pam-confirm.js` and `pam-done.js`; every number is the server's. U6's order:
+        the folder, the tick box, the counts, the sync and low lines, the reassurances, the button.
+      -->
+      <section id="confirm" class="welcome" aria-labelledby="confirm-title" hidden>
+        <h1 id="confirm-title"></h1>
+        <div id="confirm-ready">
+          <p id="confirm-folder-label"></p>
+          <p id="confirm-folder" class="welcome-folder"></p>
+          <p>
+            <input id="confirm-tick" type="checkbox" />
+            <label id="confirm-tick-label" for="confirm-tick"></label>
+          </p>
+          <p><strong id="confirm-renames"></strong> <span id="confirm-renames-tail"></span></p>
+          <p><span id="confirm-not-approved-label"></span> <strong id="confirm-not-approved"></strong></p>
+          <p><span id="confirm-skipped-label"></span> <strong id="confirm-skipped"></strong></p>
+          <p id="confirm-sync" class="banner" hidden></p>
+          <p id="confirm-low" hidden></p>
+          <ul id="confirm-promises" class="welcome-promises"></ul>
+          <button id="confirm-rename" type="button" class="primary" disabled></button>
+          <p id="confirm-tick-first"></p>
+        </div>
+        <p id="confirm-error" class="welcome-error" role="alert" hidden></p>
+        <div id="confirm-running" hidden>
+          <p id="confirm-progress" class="welcome-progress"></p>
+          <p id="confirm-keep-open"></p>
+        </div>
+        <div id="finish" hidden>
+          <h2 id="finish-headline" hidden></h2>
+          <p id="finish-time" hidden></p>
+          <p id="finish-left" hidden></p>
+          <div id="finish-lines" class="welcome-lines" hidden></div>
+          <p id="finish-report-box" hidden><a id="finish-report" target="_blank" rel="noopener"></a></p>
+          <div id="finish-recovery" class="banner" hidden>
+            <p id="finish-recovery-title"></p>
+            <p id="finish-recovery-line"></p>
+          </div>
+          <div id="finish-undo-box" hidden>
+            <p id="finish-changed"></p>
+            <button id="finish-undo" type="button"></button>
+            <p id="finish-promise"></p>
+            <p id="finish-caveat"></p>
+          </div>
+          <!-- M14 Y2: `Start reading`, after a rename and after an undo - Welcome's Reading step. -->
+          <button id="finish-read" type="button" hidden></button>
+          <button id="finish-history" type="button"></button>
+        </div>
+        <!--
+          M14 Task 7 (W22, X2): HISTORY, the screen's fourth part, reached from Done's `History`, the list header's and Welcome's
+          (T7-R1, widened by M15 Task 3's AM3). A row per rename session from `GET api/sessions`, drawn by
+          `pam-history.js`; `Back` returns to Done.
+        -->
+        <div id="history" hidden>
+          <h2 id="history-title"></h2>
+          <p id="history-empty" hidden></p>
+          <ul id="history-rows" class="history-rows" hidden></ul>
+          <p id="history-error" class="welcome-error" role="alert" hidden></p>
+          <button id="history-back" type="button"></button>
+        </div>
+        <button id="confirm-back" type="button"></button>
+      </section>
+
+      <div id="main" class="shell-content">
+        <nav id="nav" aria-label="Dates">
+          <!--
+            M14 Task 2 (U2): the wide layout's left panel - All names / Needs a look /
+            Skipped, the trust filter and the date-and-event tree - filtering THE LIST.
+            `style.css` shows the panel at wide widths only. M14 Task 2 Step 6b retired the
+            card page's own date tree and its selection panel; Task 3 rebuilds multi-select
+            as W13's bar.
+          -->
+          <div id="list-panel">
+            <div id="list-views">
+              <button id="view-all" type="button" aria-pressed="true">All names</button>
+              <button id="view-attention" type="button" aria-pressed="false">Needs a look</button>
+              <button id="view-skipped" type="button" aria-pressed="false">Skipped</button>
+            </div>
+            <label for="trust-filter">Trust</label>
+            <select id="trust-filter">
+              <option value="">All tiers</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <div id="list-tree"></div>
+          </div>
+        </nav>
+
+        <section id="grid-region">
+          <!--
+            UX spec 5: session resume. Decisions are server-side writes the moment they
+            happen, so reopening a plan is free - what is owed is the SENTENCE, and it
+            appears only when a decision already exists.
+          -->
+          <div id="resume-banner" class="banner" hidden>
+            <span id="resume-text"></span>
+            <button id="jump-undecided" type="button">Jump to first undecided</button>
+          </div>
+
+          <!--
+            M14 Task 2 Step 6b (U8 W3/W4): UX 5a's callout on the list. Step 1 is
+            `N names need a look.` with OD-3's sentence and `Look at the N first` (the
+            Needs a look tab); step 3 is W4's sentence and no button. N is the server's
+            UNDECIDED attention count. `pam-list.js` fills it; it replaced the card
+            page's Smart Review banner.
+          -->
+          <div id="look-callout" class="banner" hidden>
+            <span id="look-callout-text"></span>
+            <button id="look-callout-button" type="button" hidden></button>
+            <!-- M14 Task 3 (W3, OD-1): `Approve the other N`, N being `/list`'s top-level
+                 `shortcut_count` for the view. -->
+            <button id="look-callout-other" type="button" hidden></button>
+          </div>
+
+          <div id="done-panel" class="banner" hidden></div>
+
+          <!--
+            M14 Task 2 (U2): THE LIST, where the grid was. Above it the progress line (W2) and
+            the two tabs (W5); `pam-list.js` fills every number from the server. Step 6b
+            removed the grid, its `Load more` and the card page's counts line.
+          -->
+          <div id="list-progress">
+            <p id="progress-approved"></p>
+            <div id="progress-bar" aria-hidden="true"><span id="progress-fill"></span></div>
+            <p id="progress-rest"></p>
+          </div>
+          <div id="list-tabs">
+            <button id="tab-all" type="button" aria-pressed="true">All</button>
+            <button id="tab-attention" type="button" aria-pressed="false">Needs a look</button>
+          </div>
+          <!-- M14 Task 3 (U3, W15): `Select all` toggles the selection's `all` - the whole view. -->
+          <div id="list-select">
+            <button id="select-all" type="button" aria-pressed="false">Select all</button>
+          </div>
+          <!--
+            M14 Task 3 (U3, U8 W13/W14): THE SELECTION BAR, `N selected [Clear] [Skip] [Approve]`,
+            shown only while the selection holds something. N is the server's preview of the
+            selection, widened to whole units; the low line is the preview's `low`, in U3's
+            words. `pam-bar.js` fills it.
+          -->
+          <div id="selection-bar" class="selection-bar" hidden>
+            <span id="bar-count"></span>
+            <button id="bar-clear" type="button">Clear</button>
+            <button id="bar-skip" type="button">Skip</button>
+            <button id="bar-approve" type="button" class="primary" disabled>Approve</button>
+            <p id="bar-low" hidden></p>
+            <p id="bar-note" hidden></p>
+          </div>
+          <p id="list-note" hidden></p>
+          <div id="list"></div>
+
+          <p id="empty-state" hidden>
+            No items match —
+            <button id="clear-filters-empty" type="button">clear filters</button>
+          </p>
+          <!--
+            A6's inline name editor. ONE editor, moved into whichever row - or into the
+            preview overlay - is being edited, rather than one per row: only one name is
+            ever being typed, and a single element is the only shape in which "keys are
+            inert while the edit field has focus" has one field to be true about.
+
+            THE EXTENSION IS SHOWN AND IS NOT A FIELD (A6). pam never changes an
+            extension, so the page never offers to; the server validates the submitted
+            name against the clicked member's extension byte for byte, case included.
+          -->
+          <form id="editor" class="editor" hidden>
+            <label class="visually-hidden" for="editor-stem">New name</label>
+            <div class="editor-row">
+              <input id="editor-stem" class="editor-stem" type="text" autocomplete="off" />
+              <span id="editor-ext" class="editor-ext"></span>
+              <button id="editor-save" type="submit" class="primary">Save name</button>
+              <button id="editor-cancel" type="button">Cancel</button>
+            </div>
+            <p id="editor-note" class="editor-note" hidden></p>
+            <p id="editor-error" class="editor-error" hidden></p>
+          </form>
+        </section>
+      </div>
+
+      <!--
+        W16 (M14 Task 6c): `Rename N files`, N being `/list`'s `renames` - the files the Confirm
+        screen would rename (ruling B2) - or, with none, `Approve names to rename them`, off.
+        `pam-confirm.js` draws the button's label; the sentence is W16's own.
+      -->
+      <footer id="footer" class="shell-bar">
+        <button id="footer-rename" type="button" class="primary" disabled></button>
+        <p id="footer-promise">Only approved names change. Nothing is renamed until you confirm.</p>
+      </footer>
+    </div>
+
+    <!--
+      UX spec 5: "the preview overlay is a full review surface - reviewers of 20,000
+      photos live here, not in the grid". Large image, the metadata panel, the Why?
+      breakdown and THE SAME decide controls as the grid; arrows move without closing;
+      deciding auto-advances to the next undecided item.
+
+      A sibling of #page, not a child, because the narrow-viewport rule replaces the
+      whole application and has to be able to replace this too.
+    -->
+    <div id="overlay" hidden role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+      <div class="overlay-top">
+        <h2 id="overlay-title">Preview</h2>
+        <div class="overlay-actions">
+          <button id="overlay-prev" type="button">← Previous</button>
+          <button id="overlay-next" type="button">Next →</button>
+          <button id="overlay-approve" type="button">Approve</button>
+          <button id="overlay-skip" type="button">Skip</button>
+          <!--
+            UX spec 5 rev 8: a DECIDED item carries a control returning it to undecided,
+            and only a decided one does - so this starts hidden and `renderOverlay` shows
+            it for the items it has work to do on. The grid's copy of the same control is
+            built by `buildCard`, beside the status note, from the same word.
+          -->
+          <button id="overlay-reset" type="button" hidden>Not decided</button>
+          <button id="overlay-edit" type="button">Edit name</button>
+          <button id="overlay-close" type="button">Close</button>
+        </div>
+      </div>
+      <div class="overlay-main">
+        <div id="overlay-stage">
+          <!--
+            A2 amendment 1: the grid asks for `-ThumbnailImage` only and the overlay asks
+            for the bigger preview, so the two variants legitimately DISAGREE - a file
+            that drew a glyph in the grid can show a real picture here. The overlay
+            therefore asks for its own image rather than trusting the grid's verdict.
+            Videos and files with no embedded preview get the glyph and the panel beside
+            it; v1.0 never decodes video, so there is deliberately no player.
+          -->
+          <img id="overlay-image" alt="" hidden />
+          <span id="overlay-glyph" hidden></span>
+        </div>
+        <div id="overlay-side">
+          <p id="overlay-name"></p>
+          <div id="overlay-trust"></div>
+          <div id="overlay-meta"></div>
+          <div id="overlay-why"></div>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      UX spec 7: the shortcut overlay "doubles as the feature discovery surface", so it
+      lists the keys UX spec 5 makes normative (eight rows since M14 Task 3 named `Space`) AND the things the page can do that
+      a first-time reviewer would otherwise never find.
+    -->
+    <div id="shortcuts" hidden role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+      <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+      <p>These work the same way in the list and in the large preview.</p>
+      <dl>
+        <dt>X</dt>
+        <dd>Approve this name</dd>
+        <dt>Z</dt>
+        <dd>Skip this name — pam leaves the file called what it is called now</dd>
+        <dt>C</dt>
+        <dd>Edit this name yourself</dd>
+        <dt>↑ ↓</dt>
+        <dd>Previous / next name in the list</dd>
+        <dt>← →</dt>
+        <dd>Previous / next photo in the large preview, without closing it</dd>
+        <dt>Space</dt>
+        <dd>Select this name, to approve or skip several names together</dd>
+        <dt>Enter</dt>
+        <dd>Open or close the large preview</dd>
+        <dt>?</dt>
+        <dd>Show or hide this list of shortcuts</dd>
+      </dl>
+      <!--
+        UX spec 5 rev 8's un-decide, and it adds NO ROW above: the two keys already
+        listed are the two that toggle, so a new `<dt>` here would be a new key entering
+        UX 5's list. One line, beside the list rather than inside it.
+      -->
+      <p id="shortcuts-undecide">
+        X and Z also take a decision back. Press X on a name you have already approved —
+        or Z on one you skipped — and it goes back to <strong>not decided</strong>,
+        leaving you on that row instead of moving you on.
+      </p>
+      <p id="shortcuts-discovery">
+        Two more things worth knowing: the large preview (Enter) has a <strong>Why?</strong>
+        button that shows where each part of the name came from, and a name you have edited keeps a
+        <strong>↺</strong> button that puts pam's own name back. Deciding in the large
+        preview moves you straight to the next photo you have not decided yet.
+      </p>
+      <p>Nothing is renamed until you confirm. Typing in the name box turns these keys off.</p>
+      <button id="shortcuts-close" type="button">Close</button>
+    </div>
+
+    <!--
+      M14 Task 1: FIVE CLASSIC SCRIPTS (SEVEN since M14 Task 2: `pam-row.js`, `pam-list.js` and
+      `pam-detail.js` joined, and Step 6b retired the card page, `pam-review.js`; NINE since
+      M14 Task 3: `pam-selection.js`, the selection as data, and `pam-bar.js`, its bar; TEN
+      since M14 Task 4: `pam-welcome.js`, Welcome, before the boot that decides on it; then
+      `pam-chooser.js` (Task 5a) and `pam-reading.js` (Task 5e), Welcome's Folder and Reading
+      steps, before it; then `pam-confirm.js` and `pam-done.js` (Task 6c), Confirm and Done,
+      after Welcome and before the boot that wires them; then `pam-stopped.js` (M15 Task 5b),
+      a rename that did not run or stopped part-way, cut out of `pam-done.js`; then
+      `pam-history.js` (Task 7), History, after Done, whose undo it reuses),
+      IN THIS ORDER, and the order is load-bearing.
+      `pam-core.js` creates `window.PAM` and each later file attaches to it without a
+      fallback, so a script moved above it fails at load. `tests/js/load_order_test.js`
+      reads this list and runs the files in it in this order; `tests/test_static_syntax.py`
+      reads it again with a real HTML parser. Every script is external: no inline code.
+    -->
+    <script src="pam-core.js"></script>
+    <script src="pam-trust.js"></script>
+    <script src="pam-keys.js"></script>
+    <script src="pam-row.js"></script>
+    <script src="pam-selection.js"></script>
+    <script src="pam-list.js"></script>
+    <script src="pam-bar.js"></script>
+    <script src="pam-detail.js"></script>
+    <script src="pam-chooser.js"></script>
+    <script src="pam-reading.js"></script>
+    <script src="pam-welcome.js"></script>
+    <script src="pam-confirm.js"></script>
+    <script src="pam-done.js"></script>
+    <script src="pam-stopped.js"></script>
+    <script src="pam-history.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

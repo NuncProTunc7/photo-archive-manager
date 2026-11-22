@@ -1,0 +1,1366 @@
+/* UX spec 7's visual system, and nothing invented beside it (M7 Task 11; M14 Task 1's
+ * tokens, UX spec 7 rev 16).
+ *
+ * TWO TOKEN BLOCKS AND NOTHING ELSE THEMED. Every colour in this file is a token
+ * defined once for light and redefined once under `prefers-color-scheme: dark`. A
+ * rule that reached for a raw hex outside those two blocks would be a third theme
+ * nobody maintains.
+ *
+ * EVERY TEXT/BACKGROUND PAIR CLEARS 4.5:1, IN BOTH THEMES (UX spec 7's accessibility
+ * bullet). Rev 16 gives the band colours (`--ok`, `--warn`, `--danger`) a tint of their
+ * own to sit on and a dark variant of each, so a band colour may carry a word on its tint
+ * or on the surface - the ratio of every such pair is written beside the token, and
+ * `tests/test_static_syntax.py` recomputes each one from these values with its own WCAG
+ * 2.x formula, never from these comments. Colour is still never the SOLE signal (UX
+ * spec 5): the tier badge says `High` and draws a green dot, and either alone reads.
+ *
+ * NO EXTERNAL RESOURCE OF ANY KIND (spec 8.2 rev 12): no `url()`, no font import, no
+ * scheme anywhere in this file. The glyph cards are drawn with borders rather than
+ * with inline SVG, which is not a stylistic choice - an `<svg>` written into a script
+ * carries `xmlns` with a scheme in it, and a page that can fetch one thing off the
+ * network can fetch another.
+ */
+
+:root {
+  /* UX spec 7's tokens, light (rev 16). Ratios are WCAG 2.x contrast, text on background. */
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --text: #16191d; /* 16.16:1 on --bg, 17.63:1 on --surface, 15.03:1 on --wash */
+  --text-muted: #5b636e; /* 5.57:1 on --bg, 6.08:1 on --surface, 5.18:1 on --wash */
+  --accent: #1f4fd1; /* 6.22:1 on --bg, 6.78:1 on --surface */
+  --accent-hover: #163c9f;
+  --on-accent: #ffffff; /* 6.78:1 on --accent, 9.63:1 on --accent-hover */
+  --ok: #17784a; /* 4.84:1 on --ok-bg, 5.49:1 on --surface */
+  --ok-bg: #e6f4ec;
+  --warn: #8a5a00; /* 5.28:1 on --warn-bg, 5.93:1 on --surface */
+  --warn-bg: #fbf1dc;
+  --danger: #b23a1e; /* 5.08:1 on --danger-bg, 5.97:1 on --surface */
+  --danger-bg: #fbe9e4;
+
+  /* The hairline border, and the hover wash a control takes under the pointer. */
+  --line: #e3e6ea;
+  --wash: #ebedf0;
+
+  /* UX spec 7's spacing scale, exactly: 4 / 8 / 12 / 16 / 24 / 32. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* UX spec 7 rev 16: radius 10px for controls and rows, 16px for panels. */
+  --radius: 10px;
+  --radius-lg: 16px;
+
+  /* UX spec 7's system font stack. No webfont, deliberately - see the header. */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* UX spec 7 rev 16 (U4): a touch target is at least 44px. */
+  --touch: 44px;
+
+  /* UX spec 7: cards ~96px thumbnails, "a contact sheet, not a gallery". M14 Task 2's
+   * list replaces the cards; until then the card page is unchanged. */
+  --thumb: 96px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* UX spec 7's tokens, dark (rev 16), derived to the same 4.5:1 floor. */
+    --bg: #111418;
+    --surface: #1a1e24;
+    --text: #e8eaed; /* 15.32:1 on --bg, 13.88:1 on --surface, 11.98:1 on --wash */
+    --text-muted: #a3abb6; /* 7.97:1 on --bg, 7.22:1 on --surface, 6.23:1 on --wash */
+    --accent: #8aaeff; /* 8.42:1 on --bg, 7.63:1 on --surface */
+    --accent-hover: #b0c8ff;
+    --on-accent: #0b1730; /* 8.12:1 on --accent, 10.64:1 on --accent-hover */
+    --ok: #6fd3a0; /* 7.83:1 on --ok-bg, 9.16:1 on --surface */
+    --ok-bg: #12301f;
+    --warn: #e8bd62; /* 8.27:1 on --warn-bg, 9.47:1 on --surface */
+    --warn-bg: #33270d;
+    --danger: #ff9c86; /* 7.57:1 on --danger-bg, 8.25:1 on --surface */
+    --danger-bg: #3a1d16;
+    --line: #2c323a;
+    --wash: #252a31;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+/* Every interactive element is keyboard reachable and SAYS SO when it is focused
+ * (UX spec 7 accessibility). `:focus-visible` rather than `:focus`, so a mouse click
+ * does not leave a ring behind, and a fallback `:focus` for anything that does not
+ * support it - a missing focus ring is a worse failure than a redundant one. */
+:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-3);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover:enabled {
+  background: var(--wash);
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.primary {
+  border-color: var(--accent);
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 0 var(--space-1);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* --- the faces page's phone notice (U20: the faces page keeps it in M14) ----------- */
+
+#narrow-notice {
+  display: none;
+}
+
+/* The FACES page, below 1100px: the whole application is replaced by its notice rather
+ * than squeezed. M14 Task 2 Step 6b (U4) retired the review page's notice - that page
+ * works at any width, and its layout shell below lays it out - so the swap is scoped
+ * away from `.review-page`; the faces page has no body class and keeps it (U20). */
+@media (max-width: 1099px) {
+  body:not(.review-page) #page,
+  body:not(.review-page) #overlay,
+  body:not(.review-page) #shortcuts {
+    display: none !important;
+  }
+
+  #narrow-notice {
+    display: block;
+    padding: var(--space-6);
+    max-width: 34em;
+    margin: 0 auto;
+  }
+}
+
+/* --- layout ---------------------------------------------------------------------- */
+
+#page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+#header {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.header-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+#plan-title {
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+#estimate {
+  color: var(--text-muted);
+}
+
+.controls,
+.presets {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.controls label {
+  color: var(--text-muted);
+}
+
+#search {
+  min-width: 22em;
+  flex: 1 1 22em;
+}
+
+#main {
+  display: flex;
+  align-items: flex-start;
+  flex: 1;
+  min-height: 0;
+}
+
+#nav {
+  width: 15em;
+  flex: 0 0 15em;
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  align-self: stretch;
+}
+
+#grid-region {
+  flex: 1;
+  padding: var(--space-4) var(--space-5);
+  min-width: 0;
+}
+
+#footer {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+/* --- the review page's layout shell (M14 Task 1; U2, U4) ---------------------------- */
+
+/* A header, the content column and a sticky bottom bar, laid out by flex from 320px to
+ * 1440px and beyond. EVERY rule here is scoped to `.review-page`: the faces page shares
+ * this stylesheet and the `#page` / `#header` / `#main` / `#footer` ids, and U20 gives it
+ * the tokens and nothing else. The phone notice above still replaces this page below
+ * 1100px until M14 Task 2 retires it with the list; the shell is written for every width
+ * now so that retiring the notice is the only change that task owes it. */
+
+.review-page .shell-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* The mark: drawn with a border and a fill, never an image or a font (see the header). */
+.review-page .shell-logo {
+  flex: 0 0 auto;
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: var(--radius);
+  border: 3px solid var(--accent);
+  background: var(--surface);
+}
+
+.review-page .folder-line {
+  margin: 0;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* W23's step pills, at wide widths only. */
+.review-page .steps {
+  display: none;
+  margin: 0 0 0 auto;
+  padding: 0;
+  list-style: none;
+  gap: var(--space-2);
+}
+
+.review-page .steps li {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+}
+
+.review-page .steps li[data-step="current"] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+@media (min-width: 1100px) {
+  .review-page .steps {
+    display: flex;
+  }
+}
+
+/* The content column: full width on a narrow window, capped and centred on a wide one. */
+.review-page .shell-content {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+/* The bottom bar stays in view while the list scrolls under it. */
+.review-page .shell-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+}
+
+/* UX spec 7 rev 16 (U4): every touch target is at least 44px. */
+.review-page button,
+.review-page select,
+.review-page input {
+  min-height: var(--touch);
+}
+
+.review-page button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.review-page button.primary:hover:enabled {
+  background: var(--accent-hover);
+}
+
+/* A search box that cannot be narrower than 22em overflows a phone-sized window. */
+.review-page #search {
+  min-width: min(22em, 100%);
+}
+
+/* Below the wide layout the nav stacks above the content instead of beside it. */
+@media (max-width: 1099px) {
+  .review-page #main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .review-page #nav {
+    width: auto;
+    flex: none;
+    position: static;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* HT-M14 F3: stacked, the date tree (~35 entries on an archive of real files, each a 44px target) put
+   * the first photo two screens down at 390px. It keeps every entry and scrolls in place. */
+  .review-page #list-tree {
+    max-height: 12em;
+    overflow-y: auto;
+  }
+
+  .review-page #header,
+  .review-page #footer {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+}
+
+/* --- banners --------------------------------------------------------------------- */
+
+.banner {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* The one banner that is an alarm keeps a coloured EDGE rather than coloured words -
+ * see the header note about the band colours never being text. */
+#error-banner {
+  border-left: var(--space-1) solid var(--danger);
+}
+
+/* --- the left nav ----------------------------------------------------------------- */
+
+.nav-count {
+  color: var(--text-muted);
+}
+
+/* --- thumbnails and glyph cards --------------------------------------------------- */
+
+/* Spec 8.2 / A2: EXIF orientation is applied client-side as a CSS transform, from the
+ * orientation the catalog already recorded. `null` means no transform - and 0 is not
+ * an orientation, so there is deliberately no rule for it. */
+img[data-orientation="2"] {
+  transform: scaleX(-1);
+}
+img[data-orientation="3"] {
+  transform: rotate(180deg);
+}
+img[data-orientation="4"] {
+  transform: scaleY(-1);
+}
+img[data-orientation="5"] {
+  transform: rotate(90deg) scaleX(-1);
+}
+img[data-orientation="6"] {
+  transform: rotate(90deg);
+}
+img[data-orientation="7"] {
+  transform: rotate(270deg) scaleX(-1);
+}
+img[data-orientation="8"] {
+  transform: rotate(270deg);
+}
+
+/* The glyph card: what a video, a sidecar, a placeholder and a photo whose camera
+ * embedded no preview all get instead of an image (spec 8.2). Drawn with borders, so
+ * this file needs no image and no inline SVG. */
+.glyph {
+  width: 42px;
+  height: 32px;
+  border: 2px solid var(--text-muted);
+  border-radius: var(--space-1);
+  position: relative;
+}
+
+/* A FILM FRAME, NOT A PLAY BUTTON (HT-M7's P5). This drew a solid right-pointing
+ * triangle centred in the box - the universal play affordance - and the owner pressed it
+ * expecting playback, then got the preview overlay showing a larger one. UX spec 5 rev 3
+ * is explicit that v1.0 never decodes video and that there must be "nothing that looks
+ * like it could be pressed to watch the file", so the words were already right and no
+ * amendment is owed; only the drawing was wrong.
+ *
+ * What replaces it is the perforated edge of a strip of film: two columns of sprocket
+ * holes, one down each side, with the centre left EMPTY. Nothing is centred, so there is
+ * no target; the shape says "this is footage" rather than "this plays". Sized in
+ * percentages so the one rule serves both the grid's 42x32 glyph and `.overlay-glyph`'s
+ * 200x150 one, and drawn from a repeating gradient so this file still needs no image and
+ * no inline SVG. It stays distinct from the other two kinds at 42px: `image` puts one
+ * peak at the bottom, `other` one rule across the top, `video` two edges and a hole in
+ * the middle. */
+
+.glyph[data-kind="video"]::before,
+.glyph[data-kind="video"]::after {
+  content: "";
+  position: absolute;
+  top: 8%;
+  bottom: 8%;
+  width: 14%;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--text-muted) 0 12%,
+    transparent 12% 25%
+  );
+}
+
+.glyph[data-kind="video"]::before {
+  left: 8%;
+}
+
+.glyph[data-kind="video"]::after {
+  right: 8%;
+}
+
+.glyph[data-kind="image"]::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  bottom: 4px;
+  border-style: solid;
+  border-width: 0 9px 11px 9px;
+  border-color: transparent transparent var(--text-muted) transparent;
+}
+
+.glyph[data-kind="other"]::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  border-top: 2px solid var(--text-muted);
+}
+
+.ext-badge {
+  position: absolute;
+  right: var(--space-1);
+  bottom: var(--space-1);
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--space-1);
+  padding: 0 var(--space-1);
+  color: var(--text);
+}
+
+/* --- trust: a label and a percent, never stars (UX spec 5) ------------------------ */
+
+.trust {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.trust-bar {
+  display: inline-block;
+  width: 84px;
+  height: var(--space-2);
+  border-radius: var(--space-1);
+  background: var(--wash);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.trust-fill {
+  display: block;
+  height: 100%;
+}
+
+.trust[data-band="ok"] .trust-fill {
+  background: var(--ok);
+}
+
+.trust[data-band="warn"] .trust-fill {
+  background: var(--warn);
+}
+
+.trust[data-band="danger"] .trust-fill {
+  background: var(--danger);
+}
+
+/* --- an edited name: a statement, never an absence (UX spec 5 rev 8) -------------- *
+ *
+ * When the user has typed the name there is no label, no percentage, no bar and no
+ * tier badge - pam did not derive that name and has no provenance for it. The row is
+ * therefore ONE span wide, and an unstyled span in a slot that used to hold four
+ * elements reads as a card that failed to finish loading. So it is given the tier
+ * badge's own shape - a hairline box at text weight - which says "this is what this
+ * card has to say about trust", and the row keeps the height the full display had so
+ * the grid does not jump between an edited card and the one beside it.
+ *
+ * No band colour here, deliberately: there is no band. Colouring it would invent a
+ * verdict about a name pam did not write, which is the whole reason rev 8 removes the
+ * display in the first place.
+ */
+
+.trust[data-edited="true"] {
+  min-height: var(--space-4);
+}
+
+.trust-edited {
+  border: 1px solid var(--line);
+  border-radius: var(--space-1);
+  padding: 0 var(--space-1);
+  color: var(--text);
+}
+
+/* --- tier badges: symbol + word + dot, so colour is never the only signal --------- */
+
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--space-1);
+  padding: 0 var(--space-1);
+}
+
+.tier-badge::before {
+  content: "";
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.tier-badge[data-tier="high"]::before {
+  background: var(--ok);
+}
+
+.tier-badge[data-tier="medium"]::before {
+  background: var(--warn);
+}
+
+.tier-badge[data-tier="low"]::before {
+  background: var(--danger);
+}
+
+/* --- the Why? breakdown ------------------------------------------------------------ */
+
+/* M14 Task 2 Step 6b: the panel lives in the preview overlay only - the card it was
+ * appended to (HT-M7's P3, a `grid-column` span across the card's tracks) is gone. */
+
+.why {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.why ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.why li {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.why .why-value {
+  font-weight: 600;
+}
+
+.why .why-source {
+  color: var(--text-muted);
+}
+
+/* UX spec 5 rev 8's two extra lines in an EDITED item's Why? panel. The heading says
+ * whose name the breakdown below it describes, so it is set at heading weight and sits
+ * above the list; the restore line is an instruction rather than evidence, so it is
+ * muted and sits below everything it would undo. */
+
+.why-proposed {
+  margin: 0 0 var(--space-2);
+  font-weight: 600;
+}
+
+.why-restore {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+}
+
+/* Vision Q3 rev 4's confidence sentence (M10 Task 10). Muted like `.why-restore` because
+ * it explains the breakdown above it rather than adding a line to it, and it sits below
+ * the total for the same reason. */
+
+.why-confidence {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+}
+
+/* --- the inline name editor ------------------------------------------------------- */
+
+.editor {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.editor-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.editor-stem {
+  min-width: 14em;
+  flex: 1 1 14em;
+}
+
+.editor-ext {
+  color: var(--text-muted);
+}
+
+.editor-note,
+.editor-error {
+  color: var(--text-muted);
+}
+
+/* The refusal keeps the alarm on an edge, not on the words (see the header note). */
+.editor-error {
+  border-left: var(--space-1) solid var(--danger);
+  padding-left: var(--space-2);
+  color: var(--text);
+}
+
+/* --- the preview overlay: a full review surface, not a lightbox ------------------- */
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  gap: var(--space-3);
+  overflow: auto;
+  z-index: 10;
+}
+
+.overlay-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.overlay-main {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  flex-wrap: wrap;
+  flex: 1;
+  min-height: 0;
+}
+
+#overlay-stage {
+  flex: 1 1 60%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-height: 40vh;
+  overflow: hidden;
+}
+
+#overlay-image {
+  max-width: 100%;
+  max-height: 70vh;
+  display: block;
+}
+
+#overlay-side {
+  flex: 1 1 22em;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+#overlay-meta dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+}
+
+#overlay-meta dt {
+  color: var(--text-muted);
+}
+
+#overlay-meta dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+/* --- the shortcut overlay, which doubles as feature discovery (UX spec 7) --------- */
+
+#shortcuts {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  padding: var(--space-6);
+  overflow: auto;
+  z-index: 20;
+}
+
+#shortcuts dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-4);
+  max-width: 34em;
+}
+
+#shortcuts dt {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+}
+
+#shortcuts dd {
+  margin: 0;
+}
+
+/* --- Task 12's additions: banners, preset counts, the overlay's own controls ------- */
+
+/* The count `Accept all` carries - `[Accept all (194)]`. Filled from a server-side count
+ * of the plan's undecided high and medium names, never from the loaded page. */
+.preset-count {
+  color: var(--text-muted);
+}
+
+.preset-count:not(:empty)::before {
+  content: " ";
+}
+
+#resume-banner {
+  margin-bottom: var(--space-4);
+}
+
+.overlay-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The overlay's glyph is the grid's glyph card at reading size: a video, a sidecar, a
+ * placeholder and a photo whose camera embedded no preview all land here, and v1.0
+ * never decodes video, so there is no player behind it. */
+.overlay-glyph {
+  width: 200px;
+  height: 150px;
+}
+
+#overlay-name {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+#done-panel {
+  margin-bottom: var(--space-4);
+}
+
+#empty-state {
+  color: var(--text-muted);
+}
+
+/* A label that is read aloud but not drawn: the search box needs a name, and UX spec
+ * 5's header does not draw one. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- the review list (M14 Task 2; U2): rows, groups, the progress line ------------
+ *
+ * UX 7 rev (U2): "rows with ~44px thumbnails; a row is one decision, and the list should
+ * read like a file list a person can scan, not a gallery". Every rule is under
+ * `.review-page`, so the faces page gets none of it (U20). */
+
+.review-page #list-progress {
+  margin-bottom: var(--space-3);
+}
+
+.review-page #progress-approved {
+  font-weight: 600;
+  margin: 0;
+}
+
+.review-page #progress-bar {
+  height: 6px;
+  margin: var(--space-2) 0;
+  background: var(--wash);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.review-page #progress-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--ok);
+}
+
+.review-page #progress-rest {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.review-page #list-tabs,
+.review-page #list-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.review-page #list-tabs button[aria-pressed="true"],
+.review-page #list-views button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.review-page #list-panel {
+  margin-bottom: var(--space-4);
+}
+
+.review-page #list-tree ul {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+.review-page .list-group {
+  margin-bottom: var(--space-5);
+}
+
+.review-page .group-header {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.review-page .group-title {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.review-page .group-date,
+.review-page .group-count,
+.review-page .group-low {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* M14 Task 3 (OD-1, W12): a group's one-tap `Approve N`. */
+.review-page .group-shortcut {
+  margin-top: var(--space-2);
+}
+
+.review-page .row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.review-page .row-circle {
+  flex: 0 0 var(--touch);
+  width: var(--touch);
+  border-radius: 50%;
+  border: 2px solid var(--text-muted);
+  background: transparent;
+}
+
+.review-page .row-circle[data-state="filled"] {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+/* M14 Task 3 (U3): a row's square and a group's box - the selection, not a decision. */
+.review-page .row-square,
+.review-page .group-box {
+  flex: 0 0 var(--touch);
+  width: var(--touch);
+  min-height: var(--touch);
+  border-radius: var(--space-1);
+  border: 2px solid var(--text-muted);
+  background: transparent;
+}
+
+.review-page .row-square[data-state="all"],
+.review-page .group-box[data-state="all"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.review-page .group-box[data-state="some"] {
+  border-color: var(--accent);
+}
+
+.review-page #select-all[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* W13: the bar stays in view while the list scrolls under it. */
+.review-page .selection-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--space-1);
+  background: var(--wash);
+}
+
+.review-page #bar-count {
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.review-page #bar-low,
+.review-page #bar-note {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+.review-page .row-thumb {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--space-1);
+  background: var(--wash);
+}
+
+.review-page .row-thumb img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+}
+
+.review-page .row-body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.review-page .row-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.review-page .row-was,
+.review-page .row-unit,
+.review-page .row-decision {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.review-page .row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.review-page .row-noop,
+.review-page .row-alike,
+.review-page .row-note {
+  margin: var(--space-1) 0 0;
+}
+
+.review-page .row-note {
+  color: var(--warn);
+}
+
+/* --- M11 Task 10: the faces labeling page (UX spec 6) ------------------------------
+ *
+ * ONE VISUAL SYSTEM, NOT TWO (UX spec 7). `faces.html` shares this stylesheet with the
+ * review page and adds only what it draws that the review page does not: a strip of face
+ * crops and the notes under the controls. Everything else - the page frame, the header,
+ * the banners, the buttons, the narrow-viewport notice, both token blocks - is inherited,
+ * which is the whole reason the second page was not given a second stylesheet.
+ */
+
+/* UX spec 6 draws five faces side by side above the name field. `wrap` rather than a
+ * fixed five, because `Show every face in this group` can put forty of them here. */
+#face-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.face-card {
+  width: 96px;
+  height: 96px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+/* `cover`, so a crop that is not square fills the card rather than sitting letterboxed
+ * in it. The crop itself is cut server-side from the decoder's raster (I4). */
+.face-crop {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* A crop that will not load SAYS SO. Every unavailable state behind `/faces/crop` is a
+ * 404 with a sentence - a moved photograph, a cloud placeholder pam will not hydrate
+ * (vision R2), a geometry document that does not match the raster - and a browser's
+ * broken-image icon reports all of them as nothing at all. */
+.face-missing {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+#group-region {
+  padding: var(--space-4) var(--space-5);
+}
+
+.face-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+#name-input {
+  min-width: 18em;
+}
+
+/* How Skip differs from Ignore. Muted, because it explains the page rather than
+ * reporting anything that happened. */
+#skip-note {
+  color: var(--text-muted);
+  margin: var(--space-2) 0 0;
+  max-width: 60ch;
+}
+
+/* M11 Task 11 Step 4: the proposed split, drawn as one row of crops per proposed group
+ * so the user can see the difference pam found before anything is written. */
+#split-panel {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+#split-message {
+  margin: 0 0 var(--space-3);
+  max-width: 60ch;
+}
+
+.split-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.split-caption {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* M11 Task 11 Step 3: the Ignored faces view - a contact sheet of crops, each with its
+ * own Restore beneath it. */
+#ignored-region {
+  padding: var(--space-4) var(--space-5);
+}
+
+#ignored-list,
+#not-face-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.ignored-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.restore-face {
+  width: 96px;
+}
+
+/* M11 Task 11 Step 2: Manage people - one row per named person, then the open person's
+ * controls and a contact sheet of their faces, each with a checkbox for selecting it. */
+#people-region {
+  padding: var(--space-4) var(--space-5);
+}
+
+.person-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.person-open {
+  min-width: 10em;
+  text-align: left;
+}
+
+.person-counts {
+  color: var(--text-muted);
+}
+
+/* A hidden person is still listed - this is where they are unhidden - and says so. */
+.person-hidden {
+  color: var(--warn);
+  font-size: 0.9em;
+}
+
+#person-panel {
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+#person-faces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.person-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  cursor: pointer;
+}
+
+.face-select {
+  margin: 0;
+}
+
+/* A detection below `[tiers] faces` floor that is still assigned to this person. */
+.below-floor {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+/* Merge is destructive, so its confirmation is drawn in the danger colour. */
+#merge-panel {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+}
+
+/* M11 Task 11 Step 5: the one undo, beside the sentence that says what it would undo. */
+#undo-last {
+  margin: 0 var(--space-5);
+}
+
+/* What the last write actually changed (spec 6.2 rule 7), so it reads as pam speaking
+ * rather than as more explanation. */
+#action-note {
+  color: var(--ok);
+  padding: 0 var(--space-5);
+  font-weight: 600;
+}
+
+#request-error {
+  color: var(--danger);
+  padding: 0 var(--space-5);
+}
+
+#progress-line {
+  color: var(--text-muted);
+  padding: 0 var(--space-5);
+}
+
+#skipped-panel,
+#done-panel,
+#empty-panel {
+  margin: var(--space-4) var(--space-5);
+}
+
+/* --- Welcome (M14 Task 4 Step 7; W18, U13): the page `pam start` opens with no folder --- */
+
+.welcome {
+  max-width: 44em;
+  margin: 0 auto;
+  padding: var(--space-5);
+}
+
+.welcome-lead {
+  color: var(--text-muted);
+}
+
+.welcome-steps {
+  padding-left: var(--space-5);
+}
+
+.welcome-steps > li {
+  margin-bottom: var(--space-4);
+}
+
+.welcome-steps > li[data-step="next"] h2 {
+  color: var(--text-muted);
+}
+
+.welcome-picks {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.welcome-folder {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  overflow-wrap: anywhere;
+}
+
+.welcome-paste {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.welcome-paste input {
+  flex: 1 1 18em;
+  min-width: 0;
+}
+
+.welcome-error {
+  color: var(--danger);
+}
+
+/* M14 Task 5e: the Reading step's progress line and the job's own lines. */
+.welcome-progress {
+  font-variant-numeric: tabular-nums;
+}
+
+.welcome-lines p {
+  margin: var(--space-1) 0;
+}
+
+.welcome-promises {
+  color: var(--text-muted);
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-3);
+}

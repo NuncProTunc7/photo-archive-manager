@@ -1,0 +1,13 @@
+-- 0008_files_rel_path_nocase.sql
+-- M14 Task 0C (M13 C3, R3), OD-6 (a), answered by the owner 2026-10-29; M14 invariant I9's one
+-- exception to "no migration".
+--
+-- `repo.path_owner` asks `WHERE rel_path = ? COLLATE NOCASE` once per resolved rename - apply,
+-- undo and recovery alike (spec 7.0 J11). The UNIQUE constraint on `files.rel_path` makes a
+-- BINARY index, which cannot answer a NOCASE comparison, so every call was a full `SCAN files`:
+-- 0.34 ms a call at 10,000 files, growing with the catalog, the super-linear term in M13's F-A.
+--
+-- An index and nothing else: no column, no row, no backfill. `path_owner` is unchanged, so which
+-- row it returns is unchanged by construction; only how SQLite finds it changes. NOCASE is
+-- ASCII-only, exactly the comparison the statement already made.
+CREATE INDEX idx_files_rel_path_nocase ON files(rel_path COLLATE NOCASE);

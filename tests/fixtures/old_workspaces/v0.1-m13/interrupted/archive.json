@@ -1,0 +1,38 @@
+{
+ "case": "interrupted",
+ "files": {
+  "2018-01-01_001.JPG": {
+   "mtime_ns": 1795251218135646800,
+   "text": "the only copy of A.JPG"
+  },
+  "A.JPG.tags.json": {
+   "mtime_ns": 1795251218136648500,
+   "text": "{\"DateTimeOriginal\": \"2018:01:01 10:00:00\", \"PamTestSidecar\": \"A.JPG\"}"
+  },
+  "B.JPG": {
+   "mtime_ns": 1795251218136648500,
+   "text": "the only copy of B.JPG"
+  },
+  "B.JPG.tags.json": {
+   "mtime_ns": 1795251218137647100,
+   "text": "{\"DateTimeOriginal\": \"2020:08:05 09:15:00\", \"PamTestSidecar\": \"B.JPG\"}"
+  },
+  "P.JPG": {
+   "mtime_ns": 1795251218137647100,
+   "text": "the only copy of P.JPG"
+  },
+  "P.JPG.tags.json": {
+   "mtime_ns": 1795251218138647100,
+   "text": "{\"DateTimeOriginal\": \"2019:07:04 18:23:11\", \"PamTestSidecar\": \"P.JPG\"}"
+  },
+  "P.NEF": {
+   "mtime_ns": 1795251218138647100,
+   "text": "the only copy of P.NEF"
+  },
+  "P.NEF.tags.json": {
+   "mtime_ns": 1795251218138647100,
+   "text": "{\"DateTimeOriginal\": \"2019:07:04 18:23:11\", \"PamTestSidecar\": \"P.NEF\"}"
+  }
+ },
+ "tag": "v0.1-m13"
+}

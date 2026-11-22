@@ -1,0 +1,265 @@
+=== pam --help
+Usage: pam [OPTIONS] [COMMAND] [ARGS]...
+
+  pam - Photo Archive Manager. Safe, local, reversible photo renaming.
+
+Options:
+  --version  Show the version and exit.
+  --help     Show this message and exit.
+
+Commands:
+  apply   Rename the approved files in a plan.
+  doctor  Check that pam's environment is ready.
+  enrich  Add AI understanding to what pam has scanned.
+  faces   Work with the local face model pack and the people pam has found.
+  forget  Stop offering a photo folder.
+  models  Manage the local Ollama models pam uses to caption photos.
+  plan    Propose new names for everything pam has scanned.
+  report  Look up what pam recorded: skipped files, duplicates, or one...
+  review  Open a plan in your browser to review names.
+  scan    Read a photo folder and its metadata into the catalog.
+  start   Open pam in your browser: choose a folder, read it, review, rename.
+  status  Show what pam knows about your photo folders, and what to do next.
+  undo    Put an applied session's files back under their original names.
+  update  Install a newer pam from GitHub, after you confirm.
+  verify  Check pam's records for an archive.
+=== pam apply --help
+Usage: pam apply [OPTIONS] PLAN_ID
+
+  Rename the approved files in a plan. The only command that changes anything.
+
+Options:
+  --archive PATH  The photo folder to apply to (needed only if pam knows
+                  several).
+  --all           Accept every name you have not decided, except low-confidence
+                  ones, then apply.
+  --help          Show this message and exit.
+=== pam doctor --help
+Usage: pam doctor [OPTIONS]
+
+  Check that pam's environment is ready.
+
+Options:
+  --help  Show this message and exit.
+=== pam enrich --help
+Usage: pam enrich [OPTIONS] [NAME]
+
+  Add AI understanding to what pam has scanned. Renames nothing.
+
+Options:
+  --archive PATH                The photo folder to enrich (needed only if pam
+                                knows several).
+  --refresh-older-than-model V  Replace results made by a model older than this
+                                version, then re-run.
+  --help                        Show this message and exit.
+=== pam faces --help
+Usage: pam faces [OPTIONS] COMMAND [ARGS]...
+
+  Work with the local face model pack and the people pam has found.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  calibrate  Show which cluster_epsilon keeps the people you named apart.
+  cluster    Group the faces pam has found into one group per person.
+  export     Write pam's faces and names to a file you keep.
+  label      Name the people pam found, in your browser.
+  manifest   Write pack.toml for a folder holding the face model files.
+  purge      Delete every face and name pam holds.
+=== pam faces calibrate --help
+Usage: pam faces calibrate [OPTIONS]
+
+  Show which cluster_epsilon keeps the people you named apart. Changes nothing.
+
+Options:
+  --archive PATH        The photo folder to report on (needed only if pam knows
+                        several).
+  --floor FLOAT         Leave out faces below this.
+  --exclude-label NAME  Leave out a person.
+  --exclude-path PATH   Leave out files (glob).
+  --help                Show this message and exit.
+=== pam faces cluster --help
+Usage: pam faces cluster [OPTIONS]
+
+  Group the faces pam has found into one group per person. Renames nothing.
+
+Options:
+  --archive PATH  The photo folder to cluster faces in (spec 3 refuses to
+                  guess).
+  --help          Show this message and exit.
+=== pam faces export --help
+Usage: pam faces export [OPTIONS]
+
+  Write pam's faces and names to a file you keep. Touches no photograph.
+
+Options:
+  --archive PATH  The photo folder whose faces to export (spec 3 refuses to
+                  guess).
+  --help          Show this message and exit.
+=== pam faces label --help
+Usage: pam faces label [OPTIONS]
+
+  Name the people pam found, in your browser. Renames nothing.
+
+Options:
+  --archive PATH  The photo folder whose people to name (spec 3 refuses to
+                  guess).
+  --help          Show this message and exit.
+=== pam faces manifest --help
+Usage: pam faces manifest [OPTIONS] DIRECTORY
+
+  Write pack.toml for a folder holding the face model files.
+
+Options:
+  --help  Show this message and exit.
+=== pam faces purge --help
+Usage: pam faces purge [OPTIONS]
+
+  Delete every face and name pam holds. Deletes no photograph.
+
+Options:
+  --archive PATH  The photo folder whose faces to delete (spec 3 refuses to
+                  guess).
+  --help          Show this message and exit.
+=== pam forget --help
+Usage: pam forget [OPTIONS] PATH
+
+  Stop offering a photo folder. Keeps its catalog, history and files.
+
+Options:
+  --help  Show this message and exit.
+=== pam models --help
+Usage: pam models [OPTIONS] COMMAND [ARGS]...
+
+  Manage the local Ollama models pam uses to caption photos.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  pull  Ask the local Ollama server to download a captioning model.
+=== pam models pull --help
+Usage: pam models pull [OPTIONS] [MODEL]
+
+  Ask the local Ollama server to download a captioning model.
+
+Options:
+  --help  Show this message and exit.
+=== pam plan --help
+Usage: pam plan [OPTIONS]
+
+  Propose new names for everything pam has scanned. Renames nothing.
+
+Options:
+  --archive PATH   The photo folder to plan for (needed only if pam knows
+                   several).
+  --template TEXT  Use this naming template instead of the configured one.
+  --help           Show this message and exit.
+=== pam report --help
+Usage: pam report [OPTIONS] [COMMAND] [ARGS]...
+
+  Look up what pam recorded: skipped files, duplicates, or one rename run.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  duplicates  List identical files, and photos that look alike.
+  session     Show what one rename run did, and whether it still holds.
+  skipped     List every file pam did not read, and why.
+=== pam report duplicates --help
+Usage: pam report duplicates [OPTIONS]
+
+  List identical files, and photos that look alike.
+
+Options:
+  --archive PATH  The photo folder to report on (needed only if pam knows
+                  several).
+  --help          Show this message and exit.
+=== pam report session --help
+Usage: pam report session [OPTIONS] SESSION_ID
+
+  Show what one rename run did, and whether it still holds.
+
+Options:
+  --archive PATH  The photo folder to report on (needed only if pam knows
+                  several).
+  --help          Show this message and exit.
+=== pam report skipped --help
+Usage: pam report skipped [OPTIONS]
+
+  List every file pam did not read, and why.
+
+Options:
+  --archive PATH  The photo folder to report on (needed only if pam knows
+                  several).
+  --help          Show this message and exit.
+=== pam review --help
+Usage: pam review [OPTIONS] [PLAN_ID]
+
+  Open a plan in your browser to review names. Renames only what you confirm
+  there.
+
+Options:
+  --archive PATH  The photo folder to review (needed only if pam knows several).
+  --help          Show this message and exit.
+=== pam scan --help
+Usage: pam scan [OPTIONS] PATH
+
+  Read a photo folder and its metadata into the catalog. Renames nothing.
+
+Options:
+  --help  Show this message and exit.
+=== pam start --help
+Usage: pam start [OPTIONS] [PATH]
+
+  Open pam in your browser: choose a folder, read it, review, rename.
+
+Options:
+  --help  Show this message and exit.
+=== pam status --help
+Usage: pam status [OPTIONS]
+
+  Show what pam knows about your photo folders, and what to do next.
+
+Options:
+  --archive PATH  The photo folder to summarize (without it, every folder pam
+                  knows).
+  --help          Show this message and exit.
+=== pam undo --help
+Usage: pam undo [OPTIONS] SESSION_ID
+
+  Put an applied session's files back under their original names.
+
+Options:
+  --archive PATH  The photo folder to undo in (needed only if pam knows
+                  several).
+  --help          Show this message and exit.
+=== pam update --help
+Usage: pam update [OPTIONS]
+
+  Install a newer pam from GitHub, after you confirm. The only command that goes
+  online.
+
+Options:
+  --check                Only say whether a newer pam is offered. Downloads
+                         nothing.
+  --channel [stable|rc]  Which releases to follow: stable ones, or release
+                         candidates too.  [default: stable]
+  --help                 Show this message and exit.
+=== pam verify --help
+Usage: pam verify [OPTIONS]
+
+  Check pam's records for an archive. Reads only; renames nothing.
+
+Options:
+  --archive PATH        The photo folder to check (needed only if pam knows
+                        several).
+  --deep                Also re-read a random sample of your files from disk (1%
+                        unless --sample) and compare the bytes.
+  --seed INTEGER        Draw --deep's sample reproducibly, so a finding can be
+                        re-checked.
+  --sample FLOAT RANGE  With --deep: the percentage of files to re-read (default
+                        1; 100 re-reads them all).  [0<x<=100]
+  --help                Show this message and exit.

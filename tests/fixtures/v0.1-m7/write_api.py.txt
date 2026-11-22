@@ -1,0 +1,562 @@
+"""Spec 8.2's write API: the four endpoints a review session decides and edits through.
+
+THESE ARE THE ONLY WEB-REACHABLE WRITES IN THE PRODUCT, and what they write is what
+`pam apply` renames irreplaceable files to. Nothing here touches a photograph - the
+whole module writes two columns of `plan_items` and nothing else - but a wrong value in
+`new_filename` is a wrong name on an irreplaceable file one command later, so every
+refusal below is a safety property rather than an input-validation nicety.
+
+DECISION STATE AND NAME STATE ARE SEPARATE AXES (spec 8.2 rev 12, amendment A6), and
+this is the single most misreadable thing in the section. `decide`'s `reset` changes
+STATUS ONLY - an edited name survives it. `restore` changes the NAME ONLY - an approval
+survives it. Only `rename` writes both, and it writes `approved` deliberately, because
+UX 5a's `C` is a decision and edit-then-approve-again would double-key every edit in a
+900-item review. An implementation that made `reset` mean "undo everything the user did"
+would be a different product.
+
+THE LOW-TIER CONTRACT IS SERVER-SIDE, AND IT LIVES ON EXACTLY ONE ENDPOINT.
+`decide-filter` never approves a `low`-tier item: an explicit `tier: 'low'` is refused
+outright and a broader filter silently excludes them and says how many. `decide`, which
+names its ids, carries NO tier restriction at all - UX 5a step 2 is the user clearing the
+attention items one at a time with `X`, and most of those items are `low`. The contract
+is about bulk, not about the tier, and adding a tier check to `decide` would break Smart
+Review while looking like extra care. Enforced here rather than in the page because the
+server's entire security model is that the browser is untrusted (spec 8.2's token gate):
+a page that can POST can POST `{tier: 'low', action: 'approve'}`.
+
+VALIDATE EVERYTHING, THEN WRITE. Both write paths refuse in a first pass that touches no
+row and write in a second, and the two failure modes are deliberately different shapes:
+`decide` is a batch that must be all-or-nothing across ids, `rename` is one unit whose
+members must not be half-written. Leaning on "we did not commit" for either would be
+leaning on sqlite3's rollback to cover a bug in the order of two loops.
+"""
+
+import sqlite3
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+from pam.catalog import repo
+from pam.catalog.repo.review import ReviewItem
+from pam.naming import collision
+from pam.naming.sanitize import sanitize_token
+from pam.naming.template import build_stem
+
+# The request primitives and the two shared definitions this module must not own a second
+# copy of: `_item_filter` is how a filter field is validated (spec 8.2's five filters,
+# one validator for the query string and the body alike) and `counts` is the header
+# arithmetic every write response carries back. Private names, imported inside the one
+# package that owns them.
+from pam.webui.api import (
+    ApiRequest,
+    _bad_request,
+    _conflict,
+    _item_filter,
+    _not_found,
+    _plan_id,
+    counts,
+)
+
+if TYPE_CHECKING:  # pragma: no cover - import for typing only, never at runtime
+    from pam.webui.server import ReviewServer
+
+# Spec 8.2's three actions and what each one writes.
+APPROVE = "approve"
+SKIP = "skip"
+RESET = "reset"
+ACTIONS = (APPROVE, SKIP, RESET)
+TARGET_STATUS = {APPROVE: "approved", SKIP: "skipped", RESET: "proposed"}
+
+# Spec 8.2: "any id in a batch that is terminal (`applied`, `failed`, `undone`)". Spelled
+# from the spec's own three words rather than derived as `ITEM_STATUSES - TARGET_STATUS
+# .values()`, because deriving it would make the guard agree with whatever the vocabulary
+# happens to be - `tests/test_webui_decide.py` asserts the two partitions cover spec 4's
+# enum exactly, which is the independent check a derivation cannot give.
+TERMINAL_STATUSES = ("applied", "failed", "undone")
+
+LOW_TIER = "low"
+OPEN = "open"
+
+# What `_filter_request` carries from a JSON body into `_item_filter`. Spec 8.2's
+# `decide-filter` body names four of these; `status` and `sort` come along because the
+# validator is shared and one definition of "a filter field" is the whole point (a
+# `?tier=nonsense` 400 that a body-borne `{"tier": "nonsense"}` does not get is a bug).
+# `sort` cannot change WHICH items a bulk decision selects, only their order.
+FILTER_FIELDS = ("group", "tier", "status", "attention", "q", "sort")
+
+# UX 8's plain language. The refusal must say what pam will not do AND what the user can
+# do instead - a refusal with no way forward is UX 1.4's dead end.
+LOW_BULK_REFUSAL = (
+    "pam does not approve low-confidence names in bulk. These are the names most likely"
+    " to be wrong, so pam asks you to look at each one. Approve them one at a time, or"
+    " skip them."
+)
+
+
+# --- reading the body ----------------------------------------------------------------
+
+
+def _item_id(request: ApiRequest) -> int:
+    """The `{id}` out of the path. Not an integer -> 404, because no such item exists."""
+    raw = request.params["id"]
+    if not raw.isdigit():
+        raise _not_found(f"pam does not know an item with id {raw!r}")
+    return int(raw)
+
+
+def _action(request: ApiRequest) -> str:
+    value = request.body.get("action")
+    if not isinstance(value, str) or value not in ACTIONS:
+        raise _bad_request("action", f"must be one of {', '.join(ACTIONS)}")
+    return value
+
+
+def _item_ids(request: ApiRequest) -> list[int]:
+    """Spec 8.2's `item_ids`, checked element by element before anything is looked up.
+
+    `bool` is an `int` in Python and `True` is not an item id, so it is refused by name -
+    the same trap `review._orientation` documents on the way in.
+    """
+    value = request.body.get("item_ids")
+    if not isinstance(value, list):
+        raise _bad_request("item_ids", "must be a list of item ids")
+    ids: list[int] = []
+    for entry in value:
+        if isinstance(entry, bool) or not isinstance(entry, int):
+            raise _bad_request("item_ids", f"{entry!r} is not an item id")
+        ids.append(entry)
+    return ids
+
+
+def _new_filename(request: ApiRequest) -> str:
+    value = request.body.get("new_filename")
+    if not isinstance(value, str) or not value.strip():
+        raise _bad_request("new_filename", "must be the name you want, extension included")
+    return value
+
+
+def _filter_request(request: ApiRequest) -> ApiRequest:
+    """The body's filter fields, shaped like a query string so `_item_filter` reads them.
+
+    ONE definition of how a filter field is validated, and one definition of which items
+    a filter selects: `decide-filter` resolves its filter through `_item_filter` and
+    `repo.select_items`, exactly the pair `/plan/{id}/items` uses, so the bulk decision
+    can never act on a different set from the one the user was looking at.
+
+    JSON has a boolean and a query string does not, so `attention: true` is translated
+    into the `1` that `_attention` reads. That is a transport difference, not a second
+    rule: the VALIDATION still happens in one place.
+    """
+    query: dict[str, list[str]] = {}
+    for name in FILTER_FIELDS:
+        value = request.body.get(name)
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            query[name] = ["1" if value else "0"]
+        elif isinstance(value, str):
+            query[name] = [value]
+        elif isinstance(value, int):
+            query[name] = [str(value)]
+        else:
+            raise _bad_request(name, "must be text, a whole number or true/false")
+    return ApiRequest(params=request.params, query=query, body=request.body)
+
+
+# --- the state the writes are allowed to touch ---------------------------------------
+
+
+def _require_open_plan(conn: sqlite3.Connection, plan_id: int) -> None:
+    """Spec 8.2: the plan must be `open`, re-checked here rather than trusted.
+
+    Read inside the handler, which is inside the server's single DB lock - so no other
+    pam process can be mid-apply while this runs (`pam review` holds the workspace lock
+    for its whole lifetime, plan clarification 2) and no other request can interleave.
+    The lock is what makes it atomic; re-reading is what stops the server trusting a
+    page that has been open since before `pam apply` ran.
+    """
+    status = repo.plan_status(conn, plan_id)
+    if status is None:
+        raise _not_found(f"pam does not know a plan with id {plan_id}")
+    if status != OPEN:
+        raise _conflict(
+            f"plan {plan_id} is {status}, not open, so its names cannot be changed any"
+            " more. Run: pam plan"
+        )
+
+
+def _refuse_undecidable(items_by_id: dict[int, ReviewItem], ids: list[int]) -> None:
+    """Spec 8.2's whole-batch refusal, in a pass that writes nothing.
+
+    Two reasons collapse into one 409 because the answer is the same: pam is not going to
+    touch these rows and it is not going to touch the rest of the batch either. An id
+    this plan does not hold is either an item of another plan or an item that does not
+    exist, and neither is this plan's to decide - `items_by_id` was read for THIS plan,
+    so cross-plan needs no second query and cannot be answered inconsistently with it.
+    """
+    refused = [
+        f"{item_id} ({items_by_id[item_id].status})"
+        if item_id in items_by_id
+        else f"{item_id} (not in this plan)"
+        for item_id in ids
+        if item_id not in items_by_id or items_by_id[item_id].status in TERMINAL_STATUSES
+    ]
+    if refused:
+        raise _conflict(
+            "pam changed nothing. These items cannot be decided: "
+            + ", ".join(refused)
+            + ". An item that has already been applied, failed or been put back belongs"
+            " to a finished run, and an item from another plan is not this plan's to"
+            " decide."
+        )
+
+
+def _write_decisions(conn: sqlite3.Connection, ids: list[int], action: str) -> int:
+    """The second pass. Every id here has already been proved decidable.
+
+    Separate from `_refuse_undecidable` on purpose and not as a style: folding the write
+    into the validation loop would write the ids before the bad one and refuse after,
+    which is exactly the non-atomic batch spec 8.2 forbids.
+    """
+    for item_id in ids:
+        repo.set_plan_item_status(conn, item_id, TARGET_STATUS[action])
+    return len(ids)
+
+
+# --- decide ---------------------------------------------------------------------------
+
+
+def decide(server: "ReviewServer", request: ApiRequest) -> dict[str, Any]:
+    """`POST /api/plan/{id}/decide` - approve, skip or reset a named batch of items.
+
+    NO TIER RESTRICTION, DELIBERATELY. Spec 8.2 puts the low-tier refusal on
+    `decide-filter` and only there; this endpoint names its ids, which means a human
+    looked at each one, and UX 5a's whole flow is the user clearing the attention list -
+    mostly `low` items - one keystroke at a time.
+
+    `reset` on an item that is already `proposed` is a no-op that succeeds. Spec 8.2
+    enumerates the two things that refuse a batch (a terminal status, another plan's
+    item) and this is neither; refusing it would make a bulk `reset` over a normal view
+    fail because some of the view had never been decided.
+    """
+    plan_id = _plan_id(request)
+    action = _action(request)
+    ids = _item_ids(request)
+    with server.connection() as conn:
+        _require_open_plan(conn, plan_id)
+        items = repo.plan_rows(conn, plan_id)
+        _refuse_undecidable({item.id: item for item in items}, ids)
+        decided = _write_decisions(conn, ids, action)
+        conn.commit()
+        fresh = counts(repo.plan_rows(conn, plan_id))
+    return {
+        "plan_id": plan_id,
+        "action": action,
+        "decided": decided,
+        "excluded_low": 0,
+        "counts": fresh,
+    }
+
+
+def decide_filter(server: "ReviewServer", request: ApiRequest) -> dict[str, Any]:
+    """`POST /api/plan/{id}/decide-filter` - the same decisions, resolved from a filter.
+
+    The Low-tier contract (spec 8.2 rev 12 / vision 6a.3), both halves: an explicit
+    `tier: 'low'` with `approve` is refused OUTRIGHT, before anything is resolved, and
+    any broader filter silently drops the low-tier items and reports how many it dropped
+    so the page can say so. `skip` and `reset` carry no restriction - skipping a
+    low-confidence name in bulk is exactly the safe direction.
+
+    There is deliberately no server-side "approve all". A FILTER IS NOT REQUIRED - an
+    unfiltered `approve` does select the whole plan - but it is not an approve-all either,
+    because the exclusion above still takes every `low`-tier item out of it. That is
+    exactly how UX 5's `Approve High+Medium` preset has to be built: `tier` is
+    single-valued, so no one filter can name two tiers, and "everything the contract
+    allows" IS the preset. `skip` and `reset`, carrying no restriction, do select the
+    whole plan when unfiltered.
+    """
+    plan_id = _plan_id(request)
+    action = _action(request)
+    filt = _item_filter(_filter_request(request))
+    if action == APPROVE and filt.tier == LOW_TIER:
+        raise _bad_request("tier", LOW_BULK_REFUSAL)
+    with server.connection() as conn:
+        _require_open_plan(conn, plan_id)
+        items = repo.plan_rows(conn, plan_id)
+        chosen = repo.select_items(items, filt)
+        excluded_low = 0
+        if action == APPROVE:
+            kept = [item for item in chosen if item.tier != LOW_TIER]
+            excluded_low = len(chosen) - len(kept)
+            chosen = kept
+        ids = [item.id for item in chosen]
+        _refuse_undecidable({item.id: item for item in items}, ids)
+        decided = _write_decisions(conn, ids, action)
+        conn.commit()
+        fresh = counts(repo.plan_rows(conn, plan_id))
+    return {
+        "plan_id": plan_id,
+        "action": action,
+        "decided": decided,
+        "excluded_low": excluded_low,
+        "counts": fresh,
+    }
+
+
+# --- rename and restore ---------------------------------------------------------------
+
+
+def _unit(
+    conn: sqlite3.Connection, item_id: int
+) -> tuple[ReviewItem, list[ReviewItem], int, list[ReviewItem]]:
+    """The clicked item, its whole `unit_key` group, its plan id, and the plan.
+
+    Amendment A6: the subject of an edit is the COMPANION UNIT, never one file. A
+    per-item edit would hand `pam apply` a unit whose members rename to different stems,
+    and spec 7.3 would revert the unit at best and split a companion group at worst
+    (vision S3). `unit_key` is the plan-time grouping spec 6.3 rule 6 froze, never
+    `files.companion_group_id`, which `pam scan` recomputes from scratch.
+
+    The plan is whichever plan holds the item, not the one the server was started with:
+    the read endpoints already answer for any plan id in the path, and `_require_open_plan`
+    is what actually bounds what may be written.
+    """
+    plan_ids = repo.plan_ids_for_items(conn, [item_id])
+    if not plan_ids:
+        raise _not_found(f"pam does not know an item with id {item_id}")
+    plan_id = plan_ids[0]
+    _require_open_plan(conn, plan_id)
+    items = repo.plan_rows(conn, plan_id)
+    clicked = next((item for item in items if item.id == item_id), None)
+    if clicked is None:  # pragma: no cover - the id came out of this plan a line ago
+        raise _not_found(f"pam does not know an item with id {item_id}")
+    members = [item for item in items if item.unit_key == clicked.unit_key]
+    terminal = [f"{m.id} ({m.status})" for m in members if m.status in TERMINAL_STATUSES]
+    if terminal:
+        raise _conflict(
+            "pam changed nothing. This file renames together with "
+            + ", ".join(terminal)
+            + ", which belongs to a finished run."
+        )
+    return clicked, members, plan_id, items
+
+
+def _edited_stem(
+    server: "ReviewServer", submitted: str, clicked: ReviewItem, members: list[ReviewItem]
+) -> str:
+    """The submitted name, reduced to a stem and put back through spec 6.2's real rules.
+
+    THE EXTENSION IS VALIDATED AGAINST THE CLICKED MEMBER ONLY (spec 8.2 rev 12). That
+    is the extension the user saw on the card, and a unit's members have DIFFERENT
+    extensions by construction (`.NEF` + `.JPG`, `.JPG` + `.MOV`) - requiring them to
+    match would refuse every live-photo pair in the archive. Byte-for-byte, case
+    included: spec 5.4 rev 6 keeps an extension exactly as it is written on disk, and
+    `pam` is not the tool that decides a `.JPG` should have been a `.jpg`.
+
+    RE-SANITIZED THROUGH THE REAL ENGINE, never a re-implementation of it. `build_stem`
+    with a single `{orig}` part IS spec 6.1's postcondition machine: it runs
+    `sanitize_token`, applies spec 6.2 rule 5's budget from `stem_budget`, and re-applies
+    rule 4's reserved-device rule AFTER the cut, which is the interaction a naive
+    one-pass composition gets wrong (`Console` truncated to three characters is `Con` -
+    M3 review condition C1) together with the one going the other way (`con` -> `con-x`
+    is two characters LONGER and can bust the budget it was just brought inside). Both
+    are handled by `_finalize`'s loop, which is private and takes token parts, so
+    reaching it through its public front door is the only way to hold the postcondition
+    without owning a second copy of it.
+
+    The budget is taken against the LONGEST member path, because every member gets this
+    same stem and the longest of them is the one that has to fit.
+    """
+    ext = repo.ext_of(clicked.new_filename)
+    suffix = f".{ext}"
+    if not submitted.endswith(suffix) or len(submitted) <= len(suffix):
+        raise _bad_request(
+            "new_filename",
+            f"must keep this file's extension {suffix} exactly as it is - pam never"
+            " changes an extension",
+        )
+    cleaned = sanitize_token(submitted[: -len(suffix)])
+    if not cleaned:
+        raise _bad_request(
+            "new_filename",
+            "there is nothing left of that name once the characters Windows will not"
+            " accept in a filename are removed - try letters, digits, - or _",
+        )
+    rel_dir = max((member.rel_dir for member in members), key=len)
+    exts = tuple(repo.ext_of(member.new_filename) for member in members)
+    return build_stem(
+        ("orig",),
+        {"orig": cleaned},
+        archive_root_abs=str(server.workspace.archive_root),
+        rel_dir=rel_dir,
+        exts=exts,
+    ).stem
+
+
+def _refuse_collisions(
+    conn: sqlite3.Connection,
+    items: list[ReviewItem],
+    members: list[ReviewItem],
+    proposed: dict[int, str],
+) -> None:
+    """Spec 6.3 rule 2's namespace AND NO NEW ONE (spec 8.2), case-insensitively.
+
+    THE DISK HALF IS EVERY CATALOG rel_path, not only the `present` ones, and
+    `naming/planner.py` lines 229-243 record why in full: `files.rel_path` is UNIQUE and
+    rows are never deleted, so a `missing` row holds its name for ever and proposing it
+    plans a rename that SUCCEEDS on disk and then fails in `set_file_path`, leaving a
+    journal row in `intent` that spec 7.2's recovery can never resolve - breaking J7 on a
+    pass that runs at the start of every invocation. `collision.taken_names` is the
+    planner's own builder, reused rather than re-derived.
+
+    A NOTE ON WHAT THAT COSTS, because spec 8.2's parenthetical reads narrower. It spells
+    the namespace as "the on-disk names there the plan is not renaming", which is spec
+    6.3 rule 2's literal wording; the SHIPPED rule-2 implementation is deliberately more
+    conservative, and `taken_names`' docstring records the reason - the literal reading
+    emits plans containing swaps and cycles, which spec 7.1's absence check turns into
+    order-dependent failures. Spec 8.2's operative instruction is "rule 2's namespace and
+    NO NEW ONE", and building the literal reading would require writing a new namespace
+    builder, which is precisely what that sentence forbids. The user-visible consequence,
+    which is correct: a unit cannot be renamed onto a name another item is renaming AWAY
+    from, and gets an explicable refusal instead of a rename that would have failed.
+
+    THE UNIT'S OWN NAMES COME OUT OF BOTH HALVES FIRST. Without that a legitimate
+    re-edit collides with itself - and so does a CASE-ONLY stem change, which is legal
+    and must succeed.
+    """
+    if len({name.lower() for name in proposed.values()}) != len(proposed):
+        raise _conflict(
+            "pam changed nothing. Two files that rename together would end up with the"
+            " same name under that stem, so pam cannot use it."
+        )
+    unit_key = members[0].unit_key
+    dirs = collision.taken_names([row.rel_path for row in repo.all_files(conn).values()])
+    for item in items:
+        if item.unit_key == unit_key:
+            continue
+        collision.reserve(dirs.setdefault(item.rel_dir, set()), [item.new_filename])
+    for member in members:
+        taken = dirs.get(member.rel_dir)
+        if taken is None:
+            continue
+        # Lower the candidate, never the set: `taken_names` and `reserve` both store
+        # lowercased names, which is what makes the comparison case-insensitive on
+        # Windows (`collision.assign_unique_stem`'s docstring says so).
+        taken.discard(member.old_filename.lower())
+        taken.discard(member.new_filename.lower())
+    clashes = sorted(
+        proposed[member.id]
+        for member in members
+        if proposed[member.id].lower() in dirs.get(member.rel_dir, set())
+    )
+    if clashes:
+        raise _conflict(
+            "pam changed nothing. "
+            + ", ".join(clashes)
+            + " is already taken in that folder - either by a file on disk or by another"
+            " name in this plan. Try a different name."
+        )
+
+
+def rename_item(server: "ReviewServer", request: ApiRequest) -> dict[str, Any]:
+    """`POST /api/item/{id}/rename` - edit the stem of the item's whole companion unit.
+
+    NO MEMBER ROW IS WRITTEN UNTIL EVERY CHECK HAS PASSED (spec 8.2). Every refusal above
+    happens before the loop below, so a refused rename leaves every row byte-identical -
+    a different failure mode from `decide`'s batch atomicity, and one the reviewer
+    mutates separately.
+
+    On success both axes move: every member's name, and every member's status to
+    `approved` (spec 8.2 - UX 5a's `C` is a decision).
+    """
+    item_id = _item_id(request)
+    submitted = _new_filename(request)
+    with server.connection() as conn:
+        clicked, members, plan_id, items = _unit(conn, item_id)
+        stem = _edited_stem(server, submitted, clicked, members)
+        proposed = {m.id: f"{stem}.{repo.ext_of(m.new_filename)}" for m in members}
+        _refuse_collisions(conn, items, members, proposed)
+        for member in members:
+            repo.set_plan_item_new_filename(conn, member.id, proposed[member.id])
+            repo.set_plan_item_status(conn, member.id, TARGET_STATUS[APPROVE])
+        conn.commit()
+        fresh = repo.plan_rows(conn, plan_id)
+    return _unit_response(clicked, plan_id, fresh)
+
+
+def restore_item(server: "ReviewServer", request: ApiRequest) -> dict[str, Any]:
+    """`POST /api/item/{id}/restore` - put the planner's own name back, for every member.
+
+    STATUSES UNTOUCHED (amendment A6). Restoring is the filename operation and says
+    nothing about whether the user has decided; an approved item that is restored stays
+    approved.
+
+    NO COLLISION CHECK, because spec 8.2 grants restore none - and that is ESCALATED,
+    not settled. This docstring used to justify it with "putting it back can only return
+    the plan to a state it was already in". THAT SENTENCE IS FALSE, and reproducing it
+    takes three calls: rename unit A off its generated name, rename unit B ONTO that
+    generated name (legal - `_refuse_collisions` reads the other items' `new_filename`,
+    and a generated name is by definition not yet on disk, so A's sits in neither half of
+    the namespace), then restore A. Two items of one plan now propose one filename in one
+    directory, breaking spec 6.3 rule 2's invariant with no check having run.
+
+    Nothing is at risk, and that was measured rather than argued: spec 7.1's absence
+    check refuses the second rename and spec 7.3 reverts its whole unit - 5 renamed, 2
+    failed, no byte overwritten, no group split. What it costs is a run that reports
+    pam's own bookkeeping in the words of external interference ("a file named X is
+    already there"), which is a UX 1.4 dead end even though the archive is safe.
+
+    Pinned by `test_restore_can_reintroduce_a_collision_that_no_check_refuses`, which
+    characterises WHAT SHIPS rather than what should ship. Spec 8.2's restore paragraph
+    owes an amendment either way - M7 close escalation E1 - and the sixth measured
+    instance of this project's rule that a docstring saying "this cannot happen" is an
+    untested test. It is the first where the sentence was not merely untested but wrong.
+    """
+    item_id = _item_id(request)
+    with server.connection() as conn:
+        clicked, members, plan_id, _items = _unit(conn, item_id)
+        for member in members:
+            repo.set_plan_item_new_filename(conn, member.id, member.generated_filename)
+        conn.commit()
+        fresh = repo.plan_rows(conn, plan_id)
+    return _unit_response(clicked, plan_id, fresh)
+
+
+def _unit_response(
+    clicked: ReviewItem, plan_id: int, fresh: list[ReviewItem]
+) -> dict[str, Any]:
+    """What the page needs to repaint: the unit as it now stands, plus fresh counts.
+
+    Read back from the catalog rather than reported from what the handler intended to
+    write - the response is the page's evidence that the write landed, and a response
+    assembled from the request would say the same thing whether it had or not. It is also
+    how spec 8.2's "if sanitization alters the stem, the response returns it" is honoured
+    without a second rule: the page is told the name that is now stored.
+    """
+    return {
+        "item_id": clicked.id,
+        "plan_id": plan_id,
+        "unit_key": clicked.unit_key,
+        "members": [
+            {
+                "id": item.id,
+                "old_filename": item.old_filename,
+                "new_filename": item.new_filename,
+                "generated_filename": item.generated_filename,
+                "status": item.status,
+            }
+            for item in fresh
+            if item.unit_key == clicked.unit_key
+        ],
+        "counts": counts(fresh),
+    }
+
+
+# The four POST rows. `ReviewServer` merges this table with `api.HANDLERS`; see that
+# table's comment for why they are two tables and not one. Rows, never router branches -
+# `_match_route` reads `{id}` and `decide-filter` is an ordinary literal segment.
+WRITE_HANDLERS: dict[tuple[str, str], Callable[["ReviewServer", ApiRequest], Any]] = {
+    ("POST", "plan/{id}/decide"): decide,
+    ("POST", "plan/{id}/decide-filter"): decide_filter,
+    ("POST", "item/{id}/rename"): rename_item,
+    ("POST", "item/{id}/restore"): restore_item,
+}

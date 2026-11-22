@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+.idea/
+# local exiftool download extracted in the repo root (installed copy lives outside the repo)
+exiftool-*/
+
+# HT ground-truth manifests (tools/ht_manifest.py). Machine- and run-specific:
+# a snapshot of one person's archive copy, meaningful only to that run.
+ht_*.json
+
+# THE FACE MODEL PACK IS NOT A DEPENDENCY AND IS NOT IN THIS REPOSITORY (M11, A1/A2).
+# ~37 MB of third-party ONNX weights that the user puts in a folder of their own and names
+# in `[enrich.faces] model_dir`; pam has no code that could fetch them, and CI fetches and
+# hashes them itself. Ignored by extension rather than by path so that a pack assembled
+# inside a working tree - which is the convenient place to put one - cannot be committed by
+# accident. `pack.toml` is generated beside them by `pam faces manifest` and is ignored for
+# the same reason: it names the two files it sits with.
+*.onnx
+pack.toml

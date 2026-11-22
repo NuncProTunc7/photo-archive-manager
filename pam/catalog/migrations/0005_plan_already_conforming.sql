@@ -1,0 +1,16 @@
+-- 0005_plan_already_conforming.sql
+-- UX spec section 4's confirmation counts are NORMATIVE and include "already
+-- conforming". The planner counts those files and then writes no plan_items row for
+-- them (they need no rename), so the number existed only in the plan run's summary
+-- and was gone by the time `pam apply` read the plan back.
+--
+-- It cannot be derived at apply time: "present files with no plan item" also catches
+-- placeholders and files that errored, so a derived count would be quietly wrong at
+-- the one moment the user is deciding whether to rename their archive. Printing 0
+-- would simply be false.
+--
+-- Same category as config_json, app_version and schema_version: a plan-time fact the
+-- plan freezes so a later command can report what this plan was built against.
+-- DEFAULT 0 covers plans created before this migration - they genuinely do not know,
+-- and 0 is the count their confirmation already implied.
+ALTER TABLE plans ADD COLUMN already_conforming INTEGER NOT NULL DEFAULT 0;

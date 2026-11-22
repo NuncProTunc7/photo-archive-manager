@@ -1,0 +1,164 @@
+THIRD-PARTY NOTICES - Photo Archive Manager (pam) for Windows, version 1.0.0
+==========================================================================
+
+Carried from the licence inventory of pam's packaging spike (M15 10A and its CPython 3.14
+addendum), and completed against the artefacts the release ships (M15 Task 15W).
+
+pam's own code is licensed under the MIT License (see LICENSE). The Windows installer also
+contains the third-party software listed below. Each keeps its own licence. Each component's
+licence text is installed with it, at the path named under "Full text" (paths are relative to
+the installed pam folder).
+
+Where a licence requires the corresponding source code to accompany the binary (GPL, LGPL),
+the exact source archives of the versions listed here are published as assets of the same
+GitHub release as this installer, unchanged from their upstream GitHub tags and checked by
+SHA-256 when the release is built: libheif-1.23.6.tar.gz, libde265-1.1.3.tar.gz,
+x265-4.3.tar.gz and pillow_heif-1.8.1.tar.gz. There is no written offer; the source is
+published with every release. The licence texts that no shipped package carries are installed
+in the licenses folder.
+
+
+--------------------------------------------------------------------------
+PART A - ALWAYS INSTALLED
+--------------------------------------------------------------------------
+
+1. Python 3.14.10 (Windows embeddable package, x64)
+   Copyright (c) 2001-2025 Python Software Foundation. All rights reserved.
+   Licence: Python Software Foundation License Version 2 (PSF-2.0), with the historical
+   BeOpen, CNRI and CWI licences, and the 0BSD licence for documentation code.
+   Includes, under their own licences as listed in the same file: bzip2 1.0.8, libffi,
+   OpenSSL 3.5.9 (Apache-2.0), SQLite 3.50.4 (public domain), expat, mpdecimal, HACL*, libb2,
+   zlib, and Microsoft Distributable Code (vcruntime140.dll, vcruntime140_1.dll), which may
+   only run on Microsoft operating systems and whose copyright notices must not be altered.
+   Full text: python\LICENSE.txt
+   Source: https://www.python.org/downloads/release/python-31410/
+
+2. click 8.5.1
+   Copyright 2014 Pallets. Licence: BSD-3-Clause.
+   Full text: python\Lib\site-packages\click-8.5.1.dist-info\licenses\LICENSE.txt
+
+3. Pillow 13.0.0
+   Copyright (c) 1997-2011 Secret Labs AB; (c) 1995-2011 Fredrik Lundh and contributors;
+   (c) 2010 Jeffrey A. Clark and contributors. Licence: MIT-CMU (the "HPND" PIL licence).
+   The binary includes: libjpeg-turbo 3.2.0 (IJG and BSD-3-Clause - "This software is based
+   in part on the work of the Independent JPEG Group."), libtiff 4.7.2 (libtiff licence),
+   libwebp 1.6.0 (BSD-3-Clause), libavif 1.4.2 (BSD-2-Clause), OpenJPEG 2.5.4 (BSD-2-Clause),
+   FreeType 2.14.3 (FreeType License - "Portions of this software are copyright (c) The
+   FreeType Project (www.freetype.org). All rights reserved."), HarfBuzz 14.5.0 (MIT),
+   Little CMS 2.19.1 (MIT), zlib-ng 2.3.3 (Zlib), libxcb 1.17.0 (X11), raqm 0.11.0 (MIT),
+   pybind11 (BSD-3-Clause).
+   Note: Pillow's SBOM also lists libimagequant (GPL-3.0-or-later) and FriBiDi (LGPL-2.1+);
+   in this Windows wheel neither is compiled in or shipped (measured: PIL.features reports
+   both unavailable; the wheel holds no libimagequant code, only the name of its feature
+   flag, and no FriBiDi library - _imagingft loads a system libfribidi-0 by name if one
+   exists, and pam ships none). So neither carries a source obligation here.
+   Full text: python\Lib\site-packages\pillow-13.0.0.dist-info\licenses\LICENSE
+   SBOM: python\Lib\site-packages\pillow-13.0.0.dist-info\sboms\pillow-13.0.0.cdx.json
+
+4. pillow-heif 1.8.1
+   Python source: BSD-3-Clause. THE BINARY WHEEL AS A WHOLE IS GPL-2.0, "due to base library
+   licenses" (its own statement). It contains:
+     - libheif 1.23.6 - LGPL-3.0. Source: https://github.com/strukturag/libheif/tree/v1.23.6
+     - libde265 1.1.3 - LGPL-3.0. Source: https://github.com/strukturag/libde265/tree/v1.1.3
+     - x265 4.3 - GPL-2.0. Source: https://github.com/Multicorewareinc/x265/tree/4.3
+     - MinGW-w64 runtime: libgcc_s_seh-1.dll and libstdc++-6.dll (GPL-3.0 with the GCC Runtime
+       Library Exception), libwinpthread-1.dll (MIT and BSD).
+   The libraries are separate DLLs in python\Lib\site-packages and may be replaced by the user.
+   Full text: python\Lib\site-packages\pillow_heif-1.8.1.dist-info\licenses\LICENSE.txt and
+              ...\LICENSES_bundled.txt; licenses\GPL-2.0.txt (x265's COPYING),
+              licenses\LGPL-3.0.txt (libde265's COPYING) and the GPL-3.0 text that LGPL-3.0
+              incorporates, exiftool\exiftool_files\LICENSE (item 11; always installed).
+   Source: the complete corresponding source accompanies every release as its assets
+   libheif-1.23.6.tar.gz, libde265-1.1.3.tar.gz and x265-4.3.tar.gz (the upstream tags above),
+   and pillow_heif-1.8.1.tar.gz (https://github.com/bigcat88/pillow_heif/tree/v1.8.1), the
+   source of the wheel's own extension module and of the build that links the libraries.
+   The MinGW-w64 runtime DLLs carry no source obligation (the GCC Runtime Library Exception).
+
+5. ImageHash 4.3.2
+   Copyright (c) 2013-2022, Johannes Buchner. Licence: BSD-2-Clause.
+   Full text: python\Lib\site-packages\ImageHash-4.3.2.dist-info\LICENSE
+
+6. PyWavelets 1.10.0
+   Copyright (c) 2006-2012 Filip Wasilewski; (c) 2012- The PyWavelets Developers.
+   Licence: MIT, with bundled NumPy and SciPy code under BSD-3-Clause.
+   Full text: python\Lib\site-packages\pywavelets-1.10.0.dist-info\licenses\
+
+7. NumPy 2.5.5
+   Copyright (c) 2005-2025 NumPy Developers. Licence: BSD-3-Clause AND 0BSD AND MIT AND Zlib
+   AND CC0-1.0. The binary includes OpenBLAS (BSD-3-Clause), LAPACK (BSD-3-Clause-Open-MPI),
+   the GCC runtime libraries (GPL-3.0-or-later WITH GCC-exception-3.1) and a renamed copy of
+   Microsoft's msvcp140.dll (Microsoft Distributable Code).
+   Full text: python\Lib\site-packages\numpy-2.5.5.dist-info\licenses\ (LICENSE.txt and the
+   per-module files under numpy\)
+
+8. SciPy 1.18.1
+   Copyright (c) 2001-2002 Enthought, Inc.; 2003-, SciPy Developers. Licence: BSD-3-Clause.
+   The binary includes OpenBLAS (BSD-3-Clause), LAPACK (BSD-3-Clause-Open-MPI) and the GCC
+   runtime libraries (GPL-3.0-or-later WITH GCC-exception-3.1).
+   Full text: python\Lib\site-packages\scipy-1.18.1.dist-info\LICENSE.txt
+
+9. reverse_geocoder 1.5.1
+   Copyright Ajay Thampi. Licence: LGPL-2.1 (the upstream repository's LICENSE; the package
+   metadata says only "lgpl", and the distributed sdist carries no licence text).
+   Full text: licenses\LGPL-2.1.txt (the LICENSE of the upstream repository at commit
+   a81b4095; it has no tags).
+   The installed .py files are themselves the complete source.
+   Upstream: https://github.com/thampiman/reverse-geocoder
+
+10. GeoNames data (reverse_geocoder\rg_cities1000.csv)
+   Derived from the GeoNames "cities1000" and admin-code dumps (the package's own code names
+   download.geonames.org as the source). GeoNames data is licensed under Creative Commons
+   Attribution 4.0. The file itself carries no licence or attribution; the attribution below
+   is the one the licence requires:
+   Attribution: "Place names from GeoNames (https://www.geonames.org), CC BY 4.0."
+
+11. ExifTool 13.64 (Windows package, exiftool-13.64_64.zip)
+   ExifTool: Copyright 2003-2025, Phil Harvey. "This is free software; you can redistribute it
+   and/or modify it under the same terms as Perl itself" (Artistic License 1.0 for Perl, or
+   GPL-1.0-or-later, at the recipient's choice).
+   Windows package by Oliver Betz: the launcher exiftool.exe is CC0-1.0.
+   Strawberry Perl 5.32 (perl.exe, perl532.dll, exiftool_files\lib\): the same terms as Perl;
+   its bundled libraries' licences are in exiftool_files\Licenses_Strawberry_Perl.zip.
+   MinGW-w64 runtime DLLs (libgcc_s_seh-1.dll, libstdc++-6.dll: GPL-3.0 with the GCC Runtime
+   Library Exception, so no source obligation; libwinpthread-1.dll: MIT/BSD) and liblzma
+   (public domain / 0BSD).
+   pam distributes ExifTool and Strawberry Perl unmodified, under the Artistic License option
+   of "the same terms as Perl"; that option places no source obligation on an unmodified
+   binary. The sources are at the two addresses under "Source".
+   exiftool_files\LICENSE is the unmodified GPL-3.0 text. The package's readme_windows.txt does
+   not say which part it covers (it sends the reader to exiftool.org and strawberryperl.com
+   for the licences of ExifTool and Strawberry Perl); pam ships the file unchanged.
+   Full text: exiftool\exiftool_files\LICENSE, exiftool\exiftool_files\readme_windows.txt,
+              exiftool\exiftool_files\Licenses_Strawberry_Perl.zip
+   Source: https://exiftool.org/ and https://strawberryperl.com/
+
+
+--------------------------------------------------------------------------
+PART B - INSTALLED ONLY WITH THE OPTIONAL FACE / TEXT-READING COMPONENT
+--------------------------------------------------------------------------
+
+12. ONNX Runtime 1.32.0
+   Copyright (c) Microsoft Corporation. Licence: MIT.
+   Its third-party notices (341 KB, including Microsoft's source-code offer for components
+   under the LGPL) MUST accompany it unchanged.
+   Full text: python\Lib\site-packages\onnxruntime\LICENSE and
+              python\Lib\site-packages\onnxruntime\ThirdPartyNotices.txt
+   Note: onnxruntime\Privacy.md describes Microsoft's telemetry.
+
+13. protobuf 7.36.2
+   Copyright 2008 Google Inc. All rights reserved. Licence: BSD-3-Clause.
+   Full text: python\Lib\site-packages\protobuf-7.36.2.dist-info\LICENSE
+
+14. FlatBuffers 25.12.19
+   Copyright 2014 Google Inc. All rights reserved. Licence: Apache-2.0.
+   Full text: licenses\Apache-2.0.txt (FlatBuffers' LICENSE at tag v25.12.19; the wheel
+   carries no licence file, so the build adds it, with the base installation).
+
+15. packaging 26.3
+   Copyright (c) Donald Stufft and individual contributors. Licence: Apache-2.0 OR
+   BSD-2-Clause.
+   Full text: python\Lib\site-packages\packaging-26.3.dist-info\licenses\
+
+No machine-learning model is installed by pam. (The onnxruntime wheel carries three tiny
+example graphs under onnxruntime\datasets\; pam's build removes them, and checks that no
+.onnx file is left in the installer.)

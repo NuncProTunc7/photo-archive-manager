@@ -1,0 +1,3 @@
+A stray text file, as users' archives contain.
+
+(pam tiny library: notes.txt)

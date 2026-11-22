@@ -1,0 +1,270 @@
+name: ci
+
+# THREE JOBS, AND ONLY ONE OF THEM IS A LANE (M11 Task 7, amendment A2; `ocr` since M12 Task 12).
+# `ci` runs the whole suite; `faces` installs the optional `[faces]` extra, fetches the pinned
+# model pack and runs the tests that need a real ONNX runtime; `ocr` does the same for the
+# `[ocr]` extra and its pinned PP-OCRv4 pack. Neither is a second lane in the
+# retired sense - it does not run a subset of the suite instead of the whole one, it runs
+# the tests the whole one CANNOT run, because the push lane installs `.[dev]` and skips
+# every `faces`-marked test. See the block above the `faces:` job for the rest.
+#
+# ONE LANE, AT FULL COVERAGE (design 9.4 rev 21; owner ruling 2026-09-04, recorded at
+# docs/superpowers/specs/2026-09-04-suite-cost-ruling.md; executed as M11 condition C9).
+#
+# There were two lanes from M6 Task 9 to M10 - a `fast` lane on every push that excluded
+# `tests/test_faults_matrix.py`, and a `gate` lane on main/master/tags that excluded
+# nothing - on the argument that what the fast one skips, the slow one runs. The fast lane
+# is GONE. Measured across four closes its exclusion bought 10.9 % -> 7.8 % -> 7.90 %:
+# by the M10 close that was two near-identical runs at DOUBLE the CI cost to save nineteen
+# seconds, against a 66-test hole in M5's fault-injection matrix on every ordinary push.
+# The 100 s target it was justified by was missed by 117 % and was retired with it.
+#
+# The surviving lane also lost its `if:`. With one lane, gating on main/master/tags would
+# mean a PULL REQUEST GETS NO CI AT ALL. It now runs unconditionally, on every trigger.
+#
+# THE LOCAL PRE-COMMIT HOOK IS, AND REMAINS, THE FULL SUITE - and that is NOT a consequence
+# of this change. The rule predates the lanes (it is CLAUDE.md's, and design 9.4 rev 21
+# restates it), was independent of them while they existed, and outlives them. Do not read
+# "CI now runs everything" as permission to narrow the hook: the hook is the gate that fires
+# before a commit exists, and `tests/test_ci_lanes.py` pins it on its own terms.
+#
+# The suite's cost is tracked as COST PER TEST, never against a wall-clock threshold:
+# `tools/suite_cost.py` and `docs/suite-cost.csv`.
+
+on:
+  push:
+  pull_request:
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  ci:
+    name: ci
+    # NO `if:`. See the header - one lane means a condition would leave pull requests,
+    # and every non-default branch, with no CI whatsoever.
+    #
+    # TODO(M13): expand to a matrix of windows-latest, ubuntu-latest, macos-latest.
+    # Windows-only for now because it is the primary development platform, and because
+    # the reserved-device-stem half of the tiny library is a Windows behaviour.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # GATE 2 (M15 Task 14): in the public repository the checkout must be, file for file, the
+      # export the maintainer approved - EXPORT-MANIFEST.txt is committed with it, and this
+      # recomputes every SHA-256 before anything is installed. In the private repository, which
+      # carries tests/private/ and no manifest, the tool says so and passes.
+      - name: the checkout is the approved export (gate 2)
+        run: python tools/export_public.py --check-checkout
+
+      - run: pip install -e ".[dev]"
+
+      # EXIFTOOL IS NOT OPTIONAL, and this was measured rather than assumed: with exiftool
+      # off PATH the suite is 4 failed / 1208 passed / 17 skipped (16 more skips than a
+      # normal run). `pam scan` refuses to start without it, so the failures are in the
+      # reporting tests that drive a real scan. Installing it here and proving it with
+      # `pam doctor` turns "no exiftool" into one legible line early instead of four
+      # puzzling test failures later.
+      - name: Install exiftool
+        run: choco install exiftool -y --no-progress
+      - name: pam doctor (proves the toolchain before anything depends on it)
+        run: pam doctor
+
+      # C3: tests/test_static_syntax.py's `node --check` half SKIPS where node is
+      # absent (so the local machine, which never runs this lane, can still run the
+      # suite) - but a lane that silently skips it is indistinguishable from a lane
+      # that ran it, the exact failure this project keeps meeting (the gate-lane
+      # race, the YAML that never parsed). Same precedent as exiftool above: fail
+      # loudly here, one legible line, instead of a quiet skip deep in pytest's output.
+      - name: node is required (test_static_syntax.py's guard must not silently skip)
+        run: node --version
+
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy pam
+      - name: pytest (the FULL suite - nothing excluded)
+        run: pytest -q
+
+      # Redundant with the full suite above, and deliberately so: spec 9.4 names these by
+      # hand ("all S-criteria tests, sanitizer/planner suites, canary"), and a gate that
+      # cannot show you the check it exists for is one refactor away from not having it.
+      # Seconds, and they name themselves in the log.
+      - name: Spec 9.4 named checks - privacy canary, network grep-gate, sanitizer, planner
+        run: pytest -q tests/test_net_canary.py tests/test_net.py tests/test_sanitize.py tests/test_planner.py
+
+      # This lane is only HALF of spec 9.4. The other half - the P-run on the large
+      # library and the Q-report on the medium one, both recorded in `reports/` - cannot
+      # run on a hosted runner and is a manual procedure until M13 automates it:
+      # `docs/testing/release-gate.md`.
+      #
+      # Spec 9.4's "CI (tiny library)": scan -> plan -> verify over the spec 9.1 library,
+      # through the installed command line, in a throwaway PAM_HOME. `pam verify` must
+      # exit 0; see tools/ci_gate_library.py for why 0 and not "0 or 1".
+      - name: pam verify over the tiny library
+        run: python tools/ci_gate_library.py
+
+  # THE FACES JOB (A2). "A milestone shipping an optional extra must exercise it somewhere
+  # that gates a release" - because a stack only the developer's machine loads is a stack
+  # an upstream change breaks with CI green, and the [faces] extra is the first optional
+  # extra pam has ever shipped.
+  #
+  # IT GATES TAGS BY BEING UNCONDITIONAL, which is the same reasoning the `ci` job's header
+  # gives for having no `if:`: a tag push is a push, so a job with no condition runs on
+  # every tag as well as on every branch and pull request. A condition naming tags would
+  # gate tags and nothing else, which is how the retired `gate` lane left pull requests
+  # with no CI at all.
+  #
+  # IT IS NOT `continue-on-error`, AND `tests/test_ci_lanes.py` ASSERTS THAT. A job allowed
+  # to fail is a job that reports rather than gates, and this is the only place in the
+  # project where the real model stack is exercised at all.
+  #
+  # THE PACK IS FETCHED HERE AND HASHED HERE, and pam does none of it: amendment A1's whole
+  # point is that there is no code in pam that could fetch a model. The two SHA-256s below
+  # are A3's, pinned - `tests/test_ci_lanes.py` compares them against
+  # `pam/enrich/faces_model.py`'s constants, so this file and the product cannot drift onto
+  # two different packs. The HuggingFace mirrors are used deliberately: the
+  # `raw.githubusercontent` path returns a ~130-byte git-LFS POINTER, which downloads
+  # successfully, is named correctly and contains no model.
+  faces:
+    name: faces (the optional [faces] extra, on the real model pack)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,faces]"
+
+      # M12 Task 6 (design 9.4 rev 27, P5): the faces job gains exiftool, the main lane's own
+      # step, because the privacy canary's faces stage drives a real `pam scan` before
+      # `pam enrich faces` - and this job had none, so no command-level row could run here.
+      - name: Install exiftool
+        run: choco install exiftool -y --no-progress
+
+      - name: Fetch and verify the pinned model pack
+        run: |
+          New-Item -ItemType Directory -Force -Path pack | Out-Null
+          curl.exe -sfL -o pack/face_detection_yunet_2023mar.onnx https://huggingface.co/opencv/face_detection_yunet/resolve/main/face_detection_yunet_2023mar.onnx
+          curl.exe -sfL -o pack/face_recognition_sface_2021dec.onnx https://huggingface.co/opencv/face_recognition_sface/resolve/main/face_recognition_sface_2021dec.onnx
+          $expected = @{
+            "face_detection_yunet_2023mar.onnx"   = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
+            "face_recognition_sface_2021dec.onnx" = "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79"
+          }
+          foreach ($name in $expected.Keys) {
+            $got = (Get-FileHash "pack/$name" -Algorithm SHA256).Hash.ToLower()
+            if ($got -ne $expected[$name]) { throw "$name hashed $got, expected $($expected[$name])" }
+          }
+          pam faces manifest pack
+
+      - name: pytest -m faces (nothing here may skip)
+        # PAM_FACES_REQUIRED makes "nothing here may skip" true rather than a label: with it
+        # set, tests/conftest.py turns an unavailable faces stack into a collection error
+        # instead of ten skips and exit 0 (the M11 review's R3; tests/test_ci_lanes.py
+        # asserts it is here).
+        env:
+          PAM_FACES_MODEL_DIR: pack
+          PAM_FACES_REQUIRED: "1"
+        run: pytest -q -m faces -rs --junitxml=faces.xml
+
+      # THE FLOOR `m11.md` C3 SPECIFIED AND NEVER GOT (design 9.4 rev 27, P5). PAM_FACES_REQUIRED
+      # stops an unavailable stack from skipping; it does not stop a marked test being deleted,
+      # renamed or deselected. This fails unless EVERY node id in the hand-written list
+      # `FACES_JOB_MUST_PASS` (tests/test_ci_lanes.py) PASSED in the report - a skip, a failure
+      # or an absence each fails it.
+      - name: every hand-listed faces test PASSED (a skip or an absence cannot satisfy this)
+        run: python tools/ci_required_passed.py faces.xml FACES_JOB_MUST_PASS
+
+  # THE OCR JOB (M12 Task 12 Part B, design 9.4 rev 27-28, P5/Q5). The faces job's shape, for the
+  # faces job's reasons: unconditional (so it gates tags by being a push), never
+  # `continue-on-error`, `PAM_OCR_REQUIRED=1` so an unavailable stack is a collection error and
+  # not a green page of skips, and a floor counted from the node ids that PASSED.
+  #
+  # IT INSTALLS `[faces,ocr]` TOGETHER, because Q1 says the two extras are one pair of packages
+  # and this is where their coexistence is measured.
+  #
+  # THE PACK IS FETCHED FROM ITS RECORDED SOURCE AND HASHED THREE TIMES HERE, and pam does none
+  # of it: pam never downloads a model. The immutable PyPI wheel `rapidocr_onnxruntime-1.4.4` is
+  # downloaded WITHOUT its dependencies and WITHOUT being installed, its own SHA-256 verified,
+  # exactly its two model members extracted with Python's `zipfile`, and each of those verified.
+  # `tests/test_ci_lanes.py` compares all three hashes with Q1's literals and the product's
+  # constants. A later step proves no RapidOCR code is importable where pam runs.
+  ocr:
+    name: ocr (the optional [ocr] extra, on the pinned PP-OCRv4 pack)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,faces,ocr]"
+
+      - name: Install exiftool
+        run: choco install exiftool -y --no-progress
+
+      - name: Fetch the pinned OCR pack from its recorded source and verify all three hashes
+        run: |
+          pip download rapidocr-onnxruntime==1.4.4 --no-deps --only-binary=:all: -d wheel
+          $wheel = "wheel/rapidocr_onnxruntime-1.4.4-py3-none-any.whl"
+          $got = (Get-FileHash $wheel -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne "971d7d5f223a7a808662229df1ef69893809d8457d834e6373d3854bc1782cbf") { throw "the wheel hashed $got" }
+          New-Item -ItemType Directory -Force -Path ocrpack | Out-Null
+          python -c "import zipfile; z = zipfile.ZipFile('wheel/rapidocr_onnxruntime-1.4.4-py3-none-any.whl'); [open('ocrpack/' + n, 'wb').write(z.read('rapidocr_onnxruntime/models/' + n)) for n in ('ch_PP-OCRv4_det_infer.onnx', 'ch_PP-OCRv4_rec_infer.onnx')]"
+          $expected = @{
+            "ch_PP-OCRv4_det_infer.onnx" = "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9"
+            "ch_PP-OCRv4_rec_infer.onnx" = "48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+          }
+          foreach ($name in $expected.Keys) {
+            $got = (Get-FileHash "ocrpack/$name" -Algorithm SHA256).Hash.ToLower()
+            if ($got -ne $expected[$name]) { throw "$name hashed $got, expected $($expected[$name])" }
+          }
+
+      # Rev 4.1: nothing from the wheel is installed. The job's interpreter must not be able to
+      # import RapidOCR at all - `find_spec` returning a spec exits 1.
+      - name: No RapidOCR code is importable where pam runs
+        run: python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('rapidocr_onnxruntime') is not None)"
+
+      - name: pytest -m ocr (nothing here may skip)
+        env:
+          PAM_OCR_MODEL_DIR: ocrpack
+          PAM_OCR_REQUIRED: "1"
+        run: pytest -q -m ocr -rs --junitxml=ocr.xml
+
+      # The floor: every node id in the hand-written `OCR_JOB_MUST_PASS` (tests/test_ci_lanes.py)
+      # must have PASSED - a skip, a failure or an absence each fails it.
+      - name: every hand-listed ocr test PASSED (a skip or an absence cannot satisfy this)
+        run: python tools/ci_required_passed.py ocr.xml OCR_JOB_MUST_PASS
+
+  # THE INSTALLER JOB (M15 Task 14; Task 13B's job body, ruling 7). Inno Setup 6.7.4 is installed
+  # from its official release and checked against the SHA-256 the controller measured on
+  # 2026-11-20 before it runs; `ci_installer_job.ps1` then sets PAM_INNO_REQUIRED=1, so a runner
+  # without ISCC fails rather than skipping green, and runs the `inno`-marked behaviour tests (TEST
+  # builds, each with its own root and AppId) and the installer's source and build guards.
+  installer:
+    name: installer (the inno behaviour tests, nothing may skip)
+    runs-on: windows-latest
+    env:
+      INNO_URL: "https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe"
+      INNO_SHA256: "a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Install Inno Setup 6.7.4 (pinned by SHA-256)
+        run: |
+          Invoke-WebRequest -Uri $env:INNO_URL -OutFile innosetup.exe
+          $got = (Get-FileHash innosetup.exe -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:INNO_SHA256) { throw "innosetup.exe hashed $got, expected $env:INNO_SHA256" }
+          Start-Process -Wait -FilePath .\innosetup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$env:RUNNER_TEMP\inno"
+      - name: tools/installer/ci_installer_job.ps1 (PAM_INNO_REQUIRED=1)
+        run: powershell -NoProfile -File tools/installer/ci_installer_job.ps1 -Iscc "$env:RUNNER_TEMP\inno\ISCC.exe"

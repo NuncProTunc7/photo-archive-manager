@@ -1,0 +1,17 @@
+-- 0007_face_review_state.sql
+-- M11, amendment A13. Rev 1 of the M11 plan asserted "no migration" as an invariant and then
+-- bent the data model to satisfy it - rejection state became transient and `Hide` became an
+-- endpoint that could not work, because an unnamed cluster has no `persons` row to hide. One
+-- column is cheaper than either.
+--
+-- NULL | 'not_a_face' | 'dismissed'. A face in either non-NULL state is excluded from
+-- clustering and from {people}, and is never offered for labeling. The vocabulary is a
+-- declared tuple in one module (`repo.faces.REVIEW_STATES`), following
+-- `plan_items.ITEM_STATUSES`, `journal.OPS` and `events.LABEL_SOURCES`.
+--
+-- No backfill: NULL is correct for every existing row, and there are none.
+--
+-- `bbox_json` needs NO migration. A13 restates its CONTENT as a versioned geometry document
+-- ({"v":1,"bbox":...,"landmarks":...,"source_w":...,"source_h":...,"orientation":...}); the
+-- column is already TEXT and no production row exists to convert.
+ALTER TABLE face_instances ADD COLUMN review_state TEXT;

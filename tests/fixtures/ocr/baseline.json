@@ -1,0 +1,128 @@
+{
+  "role": "regression baseline: scores captured from pam's own pipeline, not independently verified",
+  "fixtures": {
+    "date_iso.png": [
+      {
+        "text": "1998-07-04",
+        "score": 0.9999228417873383
+      }
+    ],
+    "date_imprint.png": [
+      {
+        "text": "'987 4",
+        "score": 0.909120132525762
+      }
+    ],
+    "date_words.png": [
+      {
+        "text": "July 4, 1998",
+        "score": 0.9957726647456487
+      }
+    ],
+    "colour_red_on_blue.png": [
+      {
+        "text": "1998-07-04",
+        "score": 0.9998961210250854
+      }
+    ],
+    "colour_blue_on_red.png": [
+      {
+        "text": "1998-07-04",
+        "score": 0.9998774290084839
+      }
+    ],
+    "blank.png": [],
+    "order.png": [
+      {
+        "text": "ROLL",
+        "score": 0.9993743747472763
+      },
+      {
+        "text": "FILM",
+        "score": 0.9946245700120926
+      },
+      {
+        "text": "1998-07-04",
+        "score": 0.9998654723167419
+      }
+    ],
+    "solid_red.png": [],
+    "tilt_3.png": [
+      {
+        "text": "1998-07-04",
+        "score": 0.9999084353446961
+      }
+    ],
+    "tilt_8.png": [],
+    "inverted.png": [
+      {
+        "text": "t0-40-8661",
+        "score": 0.6629105374217034
+      }
+    ],
+    "border.png": [
+      {
+        "text": "9",
+        "score": 0.9926614761352539
+      },
+      {
+        "text": "9",
+        "score": 0.9979962706565857
+      },
+      {
+        "text": "8",
+        "score": 0.9998886585235596
+      },
+      {
+        "text": "4",
+        "score": 0.999895453453064
+      },
+      {
+        "text": "?",
+        "score": 0.05448441952466965
+      },
+      {
+        "text": "O",
+        "score": 0.44219011068344116
+      },
+      {
+        "text": "?",
+        "score": 0.30520913004875183
+      },
+      {
+        "text": "O",
+        "score": 0.466874361038208
+      },
+      {
+        "text": "C",
+        "score": 0.37588199973106384
+      },
+      {
+        "text": "一",
+        "score": 0.5204792022705078
+      },
+      {
+        "text": "一",
+        "score": 0.5744283199310303
+      },
+      {
+        "text": "1",
+        "score": 0.3576887845993042
+      }
+    ],
+    "mixed.png": [
+      {
+        "text": "9874",
+        "score": 0.9986221939325333
+      },
+      {
+        "text": "ROLL 12",
+        "score": 0.9383528828620911
+      },
+      {
+        "text": "July 4, 1998 at the lake",
+        "score": 0.9862410028775533
+      }
+    ]
+  }
+}

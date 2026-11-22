@@ -1,0 +1,168 @@
+[project]
+name = "photo-archive-manager"
+version = "1.0.0"
+description = "Photo Archive Manager - privacy-first local photo renaming"
+requires-python = ">=3.12"
+
+# THE RUNTIME DEPENDENCY LIST, AND IT IS A DECISION RATHER THAN A HABIT.
+#
+# It was exactly `click` from M1 to M8 - eight milestones - and that was a vision property,
+# not an accident (design 1). This line used to say so, and used to add "and stays that
+# way". M9 SPENDS IT, deliberately, for the first pixels pam has ever decoded and the first
+# place name it has ever produced. Design 1's stack table sanctioned all four before any of
+# them was installed; nothing here is new policy.
+#
+#   click            - the CLI. M1.
+#   Pillow           - image decode. Nothing before M9 decoded an image: M7's review UI
+#                      EXTRACTS the preview the camera already embedded (8.2) and the tiny
+#                      library is synthesised from hand-written bytes (9.1).
+#   pillow-heif      - HEIC, the format most phone photographs are in. Pillow alone
+#                      cannot open one.
+#   imagehash        - dHash for the `phash` enricher (8.1).
+#   reverse_geocoder - offline place names for the `geocode` enricher. CHOSEN FOR BEING
+#                      OFFLINE (design 1's own rationale cell): its dataset ships inside
+#                      the wheel, so the geocoder never reaches the network and vision S4
+#                      survives. `tests/test_net_canary.py` proves that by running it under
+#                      a socket wrapper rather than by trusting the sentence.
+#
+# `tests/test_deps.py` is the gate. The set above is written out there as literals FROM
+# THE SPEC and compared with this list in BOTH directions, so an unplanned dependency
+# fails the suite exactly as loudly as a missing one. Adding a fifth name here without
+# adding it there is a red suite, which is the point: M10's Ollama client must not arrive
+# unannounced.
+# THE FLOORS, AND WHY EACH ONE IS WHERE IT IS (M9 Task 8, the first consumer of three of
+# them). Nothing exercises a floor: CI and every developer install the newest release that
+# satisfies it, so a lower bound in this file is a CLAIM, not a tested configuration, and
+# the only defensible policy is "the lowest version there is a REASON to believe works".
+# The reason is written beside each. Versions actually run: Pillow 12.3.0, pillow-heif
+# 1.5.0, imagehash 4.3.2, reverse_geocoder 1.5.1.
+dependencies = [
+  # RAISED FROM `>=8.1` AT THE M11 CLOSE, and the reason is a measurement rather than a
+  # taste: click **8.5.0 dropped its Windows `colorama` dependency**, so pam's transitive
+  # footprint - which `tests/test_deps.py` pins EXACTLY, in both directions - is a
+  # different set on 8.4 than on 8.5. A floor that spans the change makes the footprint a
+  # property of whichever click a machine happens to have, and hosted CI proved it: green
+  # here on 8.4.2, red there on 8.5.0. The same argument as the Pillow bound below.
+  "click>=8.5",
+  # 11.1 is not a taste judgement - `pillow-heif` 1.x REQUIRES `pillow>=11.1.0`, and pam
+  # declaring `>=11` made its own metadata weaker than its dependency's, so a resolver
+  # explaining the conflict would name pillow-heif and not pam. Raised to match.
+  "Pillow>=11.1",
+  # WAS `>=0.18`, WHICH SAT BELOW THE 0.x -> 1.x MAJOR BREAK: it promised compatibility
+  # with an API generation nobody here has ever run. `register_heif_opener()` is the whole
+  # of pam's use of this package and it survived the break, but "it probably still works"
+  # is not a floor. 1.0 is the boundary; 1.5.0 is what is installed and tested.
+  "pillow-heif>=1.0",
+  # `dhash(image, hash_size=8)` and `str(ImageHash)` are the whole of pam's use; both have
+  # been stable across 4.x. Left at 4.3 because there is no reason to raise it and an
+  # unjustified floor is the thing this block exists to stop.
+  "imagehash>=4.3",
+  "reverse_geocoder>=1.5",
+]
+
+[project.optional-dependencies]
+# DEV ONLY - these are not part of the runtime list above and must never leak into it.
+# `pyyaml` is here because spec 9.4 rev 11 requires CI configuration to be validated by a
+# REAL parser: at the M6 close `.github/workflows/ci.yml` did not parse as YAML, GitHub
+# would have rejected both lanes, and the suite's own hand-rolled structural reader could
+# not see it - a hand-rolled parser cannot notice that the document is not the language.
+# It was already installed as a transitive dependency of `pre-commit`; declaring it makes
+# an accident explicit. NO MODULE UNDER `pam/` MAY IMPORT IT - `tests/test_net.py`'s
+# import guard does not cover it, so `tests/test_ci_lanes.py` asserts it directly.
+dev = ["pytest>=8", "ruff", "mypy", "pre-commit", "pyyaml"]
+
+# THE `[faces]` EXTRA (M11, design 1 rev 22 / A1-A2). NOT PART OF THE RUNTIME CLOSURE.
+# `pip install photo-archive-manager` (OD-12) installs none of it, and that is the point of an extra rather than a
+# sixth dependency: onnxruntime is a 14 MB model runtime that most of this product has no
+# use for, and face detection is opt-in (`[enrich.faces] enabled = false`).
+#
+# EVERY IMPORT OF BOTH IS DEFERRED - inside functions in `pam/enrich/faces_model.py`, on
+# `pam/enrich/phash.py`'s measured precedent. `EAGER_IMPORT_CLOSURE` stays `{click, pam}`,
+# and `tests/test_faces_model.py` walks the AST of `pam/` to refuse a module-scope import
+# of either. A faces name appearing in that closure is somebody's `import`, never a policy
+# change.
+#
+# AND THE WEIGHTS ARE NOT A DEPENDENCY. The YuNet and SFace ONNX files are ~37 MB of
+# third-party model, they are not on PyPI, and there is no code in pam that could fetch
+# them: the user puts them in a folder and names it in `[enrich.faces] model_dir`. That is
+# stronger than a disabled download, and it is why this milestone deleted `insightface`
+# rather than configuring it.
+#
+# THE RANGES ARE TESTED ONES, NOT BARE FLOORS, and the upper bound is the half that is
+# doing the work. Measured in a throwaway venv on Python 3.14.2 / AMD64 / Windows 11,
+# WHEELS ONLY, NO COMPILER: onnxruntime 1.29.0 and numpy 2.5.2, which also install
+# protobuf 7.36.1, flatbuffers 25.12.19 and packaging 26.3 (all three declared in
+# `tests/test_deps.py`). The floor on onnxruntime is the tested version itself: the
+# provider list, the session constructor's keyword and the ONNX opsets a 2023 model needs
+# all really do move across its minor releases, so claiming an older one works would be a
+# claim nobody here has run. numpy's floor is 2.0 because that is where the documented
+# break is and pam uses only core ndarray operations, stable across 2.x; 2.5.2 is what is
+# tested. Both upper bounds exclude the next major, which is the only version that can be
+# relied upon to break something.
+faces = ["onnxruntime>=1.29,<2", "numpy>=2.0,<3"]
+
+# THE `[ocr]` EXTRA (M12, design 1 rev 28-29, Q1). EXACTLY THE `[faces]` PAIR, AT ITS RANGES, and
+# that is the whole claim: there is no OCR library. `rapidocr-onnxruntime` 1.4.4 declares
+# `Requires-Python <3.13` (M12 Task 7, S1), so pam runs its own PP-OCRv4 pipeline
+# (`pam/enrich/ocr_detect.py`, `ocr_recognize.py`, `ocr_model.py`) over the same two wheels the
+# face stack already admits. Nothing arrives that `[faces]` does not already bring, so its
+# transitive footprint is `[faces]`'s, and `tests/test_deps.py` asserts the two lists are equal.
+# The two model files are a pack the USER places in `[enrich.ocr] model_dir`; pam never
+# downloads a model, and no RapidOCR code is installed.
+ocr = ["onnxruntime>=1.29,<2", "numpy>=2.0,<3"]
+
+[project.scripts]
+# M15 Task 13A-F1: the light entry registers (E11) BEFORE `pam.cli` is imported; never point this
+# back at `pam.cli:main` (`tests/test_packaging.py`). An editable install keeps the entry it was
+# installed with: re-run `pip install -e ".[dev]" --no-deps` after changing it.
+pam = "pam.entry:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["pam*"]
+
+[tool.setuptools.package-data]
+# `webui/static/*` is spec 8.2's page, served from the package by `importlib.resources`
+# (M7 plan clarification 8). Without this entry the installed wheel serves nothing.
+pam = ["catalog/migrations/*.sql", "webui/static/*"]
+
+[tool.pytest.ini_options]
+# NO TEST-ORDER RANDOMISATION, and that is a ruling rather than an oversight
+# (M5 architecture review section 3.6; M6 Task 2 Step 4). Do not add `pytest-randomly`.
+#
+# 1. It would be a new dev dependency, and this project takes no dependency without a
+#    spec amendment. (M9 added four runtime dependencies - all four were sanctioned by
+#    design 1's stack table years before they were installed, which is exactly the
+#    procedure this bullet is about. `pytest-randomly` has no such sanction.)
+# 2. The order hazards randomisation hunts for are already caught here, and caught
+#    DETERMINISTICALLY, by three autouse tripwires in tests/conftest.py -
+#    `_pam_home_stayed_isolated`, `_faults_stayed_isolated`, `_no_unit_was_left_split` -
+#    plus two sanction lists asserted empty at setup and cleared at teardown. Each
+#    fires on the specific leak rather than on a shuffled seed that may or may not
+#    reproduce.
+# 3. Order independence was checked by hand instead, at the M5 gate, and passed.
+#
+# `-p no:randomly` was an ad-hoc command-line flag during that check. It is in no
+# committed configuration - not here, not in .github/workflows/ci.yml (whose two lanes
+# run `pytest -q --ignore=<the fault matrix>` and a bare `pytest -q`), and not in
+# .pre-commit-config.yaml (which since M6 Task 9 runs ruff, ruff-format, `mypy pam` and
+# the full suite - it was ruff-only when this note was first written, which is a thing
+# worth knowing when reading older claims about what the hook enforces). There is
+# nothing to delete; do not go looking for it.
+#
+# Re-open this if a leak ever slips past all three tripwires.
+testpaths = ["tests"]
+# ONE MARKER PER OPTIONAL STACK, AND EACH SKIP IS ONE BOOLEAN (A2; `ocr` since M12 Task 12).
+# `faces` marks every test that needs the
+# optional extra AND a real model pack. `tests/conftest.py` skips them all on one shared
+# condition, so a lane skips ALL of them or NONE - never some, which is the count nobody
+# can reconcile. Registered here because an unregistered marker is a warning pytest emits
+# and nobody reads.
+markers = [
+  "faces: needs the optional [faces] extra and a real model pack (PAM_FACES_MODEL_DIR)",
+  "ocr: needs the optional [ocr] extra and the PP-OCRv4 model pack (PAM_OCR_MODEL_DIR)",
+  "inno: compiles and runs a TEST build of the installer; needs Inno Setup's ISCC (PAM_INNO_ISCC)",
+]

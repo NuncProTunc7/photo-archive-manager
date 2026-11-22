@@ -1,0 +1,61 @@
+#
+# THE INSTALLER'S LOCK (M15 spike 10A 3.14 ADDENDUM, DRAFT; destined for tools/installer/requirements.lock if OD-1 moves to 3.14).
+# Target: CPython 3.14 (cp314), Windows x64 (win_amd64), the embeddable package 3.14.10.
+# Resolved ONCE by pip 25.3 with:
+#   pip install --dry-run --ignore-installed --report <f> --platform win_amd64 --python-version 3.14
+#     --implementation cp --abi cp314 --only-binary=:all: --target <d> --find-links <rg wheel>
+#     "photo-archive-manager[faces,ocr]==1.0.0"
+# Then reviewed, and consumed UNCHANGED by every build:
+#   pip install --require-hashes --no-deps --only-binary=:all: --platform win_amd64 --python-version 3.14
+#     --implementation cp --abi cp314 --target <payload>\Lib\site-packages -r requirements.lock
+#
+# reverse-geocoder 1.5.1 publishes an sdist ONLY. Its line carries TWO hashes: the PyPI sdist, and the
+# py3-none-any wheel built from it with SOURCE_DATE_EPOCH=1700000000 and setuptools 84.2.1 (measured
+# byte-reproducible across two builds; without SOURCE_DATE_EPOCH the hash differs). Build step:
+#   pip wheel --no-deps --require-hashes reverse-geocoder==1.5.1 --hash=sha256:<sdist> -w <wheels>
+# and pass --find-links <wheels>; pip accepts the line if EITHER hash matches the file it uses.
+#
+# pam itself is NOT in this file: it is the product, built from the tagged tree and installed --no-deps.
+#
+# ---- BASE PAYLOAD (always installed) ----
+click==8.5.1 \
+    --hash=sha256:8bb5376d2006950386f8c6427613334a2acadc5f559cb80e638d00b4df957e37
+    # via photo-archive-manager
+imagehash==4.3.2 \
+    --hash=sha256:02b0f965f8c77cd813f61d7d39031ea27d4780e7ebcad56c6cd6a709acc06e5f
+    # via photo-archive-manager
+numpy==2.5.5 \
+    --hash=sha256:20145b11776d2f7570cd61351b156a51d3a341822282095baa819d87272bc710
+    # via imagehash, pywavelets, reverse-geocoder, scipy (and onnxruntime when a component is selected)
+pillow==13.0.0 \
+    --hash=sha256:f7cbb7a64e7ec664775195e4f81923bc8a93d9451b963f844e59118f63147a7a
+    # via photo-archive-manager, imagehash, pillow-heif
+pillow-heif==1.8.1 \
+    --hash=sha256:c583f2c08aa08848e7b97f4b416f5dce9f485182fd55efd39edba10f092ee651
+    # via photo-archive-manager
+pywavelets==1.10.0 \
+    --hash=sha256:cc2567834ca971b1655eb3220b1343d71ff3318f9405ab5d83ee621b2342192d
+    # via imagehash
+reverse-geocoder==1.5.1 \
+    --hash=sha256:2a2e781b5f69376d922b78fe8978f1350c84fce0ddb07e02c834ecf98b57c75c \
+    --hash=sha256:8d957c40a3f603b2b3d0def2c4256177f6627201e200976938b5ecf8504faac2
+    # via photo-archive-manager
+scipy==1.18.1 \
+    --hash=sha256:78a0d7c918e74a232394117160e7e3db503377572a45bcef8826e4ab8a35feba
+    # via imagehash, reverse-geocoder
+#
+# ---- OPTIONAL COMPONENT (OD-9): [faces] and [ocr] resolve to the SAME four artefacts ----
+# Installed only when the component is ticked. If the installer must use ONE file, these lines move
+# into a second file (requirements-onnx.lock) because pip installs every line of a -r file.
+flatbuffers==25.12.19 \
+    --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
+    # via onnxruntime
+onnxruntime==1.32.0 \
+    --hash=sha256:2b08ee990d00ab2ee129c5e039f7339963335a4d76f5bd22bfb4f896ae1cec0a
+    # via photo-archive-manager[faces], photo-archive-manager[ocr]
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+    # via onnxruntime
+protobuf==7.36.2 \
+    --hash=sha256:a300819d441e078a5608c0d3c709796bb548136058fda017ae51d425b44fd353
+    # via onnxruntime

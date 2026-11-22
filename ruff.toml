@@ -1,0 +1,26 @@
+target-version = "py312"
+line-length = 96
+
+# ruff targets the codebase (pam/ + tests/), not prose. ruff 0.16 formats Python
+# code blocks embedded in Markdown by default, which would rewrite the example
+# snippets inside our plan/spec documents; docs are authored by hand, so exclude them.
+extend-exclude = ["docs"]
+
+[lint]
+select = [
+  "E", "F", "W",   # pycodestyle + pyflakes
+  "I",             # import sorting
+  "B",             # bugbear
+  "UP",            # pyupgrade
+  "SIM",           # simplification
+]
+ignore = ["E501"]  # line length handled by the formatter
+
+[lint.per-file-ignores]
+"tests/*" = ["SIM"]
+
+[lint.isort]
+# `build` is tools/installer/build.py. Without this, ruff calls it first-party only where an
+# untracked `build/` folder (setuptools' output) happens to sit at the root, so a clean clone
+# sorted the same imports differently and failed `ruff check` (M15 Task 14's fresh-clone run).
+known-first-party = ["build"]
