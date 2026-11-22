@@ -73,7 +73,13 @@ GARBAGE = (
 
 
 def test_the_package_version_is_od_8s():
-    assert pam.__version__ == OD_8_FIRST_VERSION
+    """OD-8's first version, or one of its release candidates: HT-M15 rehearses on `1.0.0rc1` and
+    `1.0.0rc2`, and the release workflow builds only the version the checkout carries."""
+    head, _, rc = pam.__version__.partition("rc")
+    assert head == OD_8_FIRST_VERSION
+    assert rc == "" or (rc.isascii() and rc.isdigit() and not rc.startswith("0")), (
+        pam.__version__
+    )
 
 
 def test_pyproject_and_the_package_agree_on_the_version():

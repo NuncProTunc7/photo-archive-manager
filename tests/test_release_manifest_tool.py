@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+import pam
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import release_manifest  # noqa: E402
@@ -82,9 +84,14 @@ def test_it_writes_the_manifest_beside_the_installer(tmp_path):
 
 
 def test_the_default_version_is_the_packages(tmp_path):
-    installer = _installer(tmp_path)
-    assert _run(installer, "--payload", _payload(tmp_path), "--channel", "stable") == 0
-    assert '"version": "1.0.0"' in (tmp_path / "out" / "pam-release.json").read_text("utf-8")
+    """With no --version the manifest carries `pam.__version__` - a stable version or, for HT-M15's
+    rehearsal, a release candidate (whose channel is `rc`)."""
+    version = pam.__version__
+    installer = _installer(tmp_path, f"pam-setup-{version}.exe")
+    channel = "rc" if "rc" in version else "stable"
+    assert _run(installer, "--payload", _payload(tmp_path), "--channel", channel) == 0
+    text = (tmp_path / "out" / "pam-release.json").read_text("utf-8")
+    assert f'"version": "{version}"' in text
 
 
 def test_a_release_candidate(tmp_path):
@@ -135,14 +142,16 @@ def test_a_payload_without_a_migrations_folder_is_refused(tmp_path, capsys):
 
 def test_an_installer_named_for_another_version_is_refused(tmp_path, capsys):
     installer = _installer(tmp_path, "pam-setup-1.0.1.exe")
-    assert _run(installer, "--payload", _payload(tmp_path), "--channel", "stable") == 2
+    args = ("--payload", _payload(tmp_path), "--channel", "stable", "--version", "1.0.0")
+    assert _run(installer, *args) == 2
     assert "pam-setup-1.0.0.exe" in capsys.readouterr().err
     assert not (tmp_path / "out" / "pam-release.json").exists()
 
 
 def test_a_channel_that_disagrees_with_the_version_is_refused(tmp_path, capsys):
     installer = _installer(tmp_path)
-    assert _run(installer, "--payload", _payload(tmp_path), "--channel", "rc") == 2
+    args = ("--payload", _payload(tmp_path), "--channel", "rc", "--version", "1.0.0")
+    assert _run(installer, *args) == 2
     assert "channel rc" in capsys.readouterr().err
 
 
@@ -156,7 +165,8 @@ def test_an_existing_manifest_is_never_overwritten(tmp_path, capsys):
     installer = _installer(tmp_path)
     existing = tmp_path / "out" / "pam-release.json"
     existing.write_text("keep me\n", encoding="utf-8")
-    assert _run(installer, "--payload", _payload(tmp_path), "--channel", "stable") == 2
+    args = ("--payload", _payload(tmp_path), "--channel", "stable", "--version", "1.0.0")
+    assert _run(installer, *args) == 2
     assert existing.read_text(encoding="utf-8") == "keep me\n"
     assert "already exists" in capsys.readouterr().err
 
